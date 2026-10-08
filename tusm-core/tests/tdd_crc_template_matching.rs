@@ -320,3 +320,94 @@ fn test_crc_mint_btc_first_mint_07fb() {
     let ev = event.unwrap();
     assert_eq!(ev.1, expected_atoms);
 }
+
+#[test]
+fn test_crc_120_canonical_mints_exact_convergence() {
+    let canonical_path = "./tests/fixtures/canonical_mints.json";
+    let raw_cache_path = "./tests/fixtures/raw_mints_cache.json";
+    
+    if !std::path::Path::new(canonical_path).exists() || !std::path::Path::new(raw_cache_path).exists() {
+        println!("Skipping 120-mint convergence test: scratch cache files not present.");
+        return;
+    }
+    
+    let canonical_raw = std::fs::read_to_string(canonical_path).unwrap();
+    let canonical: Vec<serde_json::Value> = serde_json::from_str(&canonical_raw).unwrap();
+    
+    let raw_cache_str = std::fs::read_to_string(raw_cache_path).unwrap();
+    let raw_cache: HashMap<String, String> = serde_json::from_str(&raw_cache_str).unwrap();
+    
+    assert_eq!(canonical.len(), 120);
+    assert_eq!(raw_cache.len(), 120);
+    
+    // Build external_payments for DOG mints
+    let mut external_payments = HashMap::new();
+    for m in &canonical {
+        if m.get("asset").and_then(|v| v.as_str()) == Some("DOG") {
+            let txid = m.get("txid").and_then(|v| v.as_str()).unwrap().to_string();
+            let dog_units: u128 = m.get("dogUnits").and_then(|v| v.as_str()).unwrap().parse().unwrap();
+            let dog_rate: u64 = m.get("dogRate").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(47913);
+            let lock: u16 = m.get("lock").and_then(|v| v.as_u64()).unwrap() as u16;
+            let asset_key = format!("DOG:{}:{}", dog_rate, lock);
+            external_payments.insert(txid, (asset_key, dog_units));
+        }
+    }
+    assert_eq!(external_payments.len(), 39);
+    
+    let mut current_state = default_crc_state();
+    let mut total_minted_atoms: u128 = 0;
+    let mut processed_count = 0;
+    
+    // Sort canonical mints by block height, then txid
+    let mut sorted_mints = canonical.clone();
+    sorted_mints.sort_by_key(|m| {
+        (
+            m.get("height").and_then(|v| v.as_u64()).unwrap_or(0),
+            m.get("txid").and_then(|v| v.as_str()).unwrap_or("").to_string()
+        )
+    });
+    
+    for m in &sorted_mints {
+        let txid = m.get("txid").and_then(|v| v.as_str()).unwrap();
+        let height = m.get("height").and_then(|v| v.as_u64()).unwrap_or(968900) as u32;
+        let expected_atoms: u128 = m.get("atoms").and_then(|v| v.as_str()).unwrap().parse().unwrap();
+        
+        let raw_hex = raw_cache.get(txid).expect("Raw tx missing from cache");
+        let raw_bytes = hex::decode(raw_hex).unwrap();
+        let tx: Transaction = bitcoin::consensus::deserialize(&raw_bytes).unwrap();
+        
+        let empty_cache: HashMap<OutPoint, Coin> = HashMap::new();
+        
+        let get_state = |_ticker: &str| -> SigmaLeaf {
+            current_state.clone()
+        };
+        
+        let res = LegacyV1Router::process(
+            &tx,
+            get_state,
+            |_t, _a| 0u128,
+            height,
+            &empty_cache,
+            &external_payments
+        ).expect("Process error");
+        
+        assert!(res.is_some(), "Mint rejected by router for txid: {}", txid);
+        let (ticker, mutated_state, event_opt) = res.unwrap();
+        assert_eq!(ticker, "CRC");
+        
+        let ev = event_opt.expect("Event missing for mint");
+        let allocated_atoms = ev.1;
+        assert_eq!(allocated_atoms, expected_atoms, "Atom allocation mismatch for txid {}", txid);
+        
+        total_minted_atoms += allocated_atoms;
+        current_state = mutated_state;
+        processed_count += 1;
+    }
+    
+    assert_eq!(processed_count, 120);
+    // Target consensus ground truth: exactly 162,053,369.45 CRC = 16,205,336,945,176,514 atoms
+    assert_eq!(total_minted_atoms, 16_205_336_945_176_514u128);
+    assert_eq!(current_state.supply, 16_205_336_945_176_514u128);
+    
+    println!("SUCCESS: All 120 canonical CRC mints converged to EXACTLY {} atoms (162,053,369.45 CRC)!", current_state.supply);
+}

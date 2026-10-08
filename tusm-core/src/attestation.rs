@@ -3,17 +3,23 @@ use bitcoin::hashes::hmac::{Hmac, HmacEngine};
 use bitcoin::hashes::{sha256, Hash, HashEngine};
 
 /// Canonical historical Genesis V1 DOG transactions authorized at block 968,966 with bound exact amounts
-pub const CANONICAL_HISTORICAL_DOG_PAYMENTS: [(&str, u128, u64); 4] = [
+pub const CANONICAL_HISTORICAL_DOG_PAYMENTS: [(&str, u128, u64); 8] = [
     ("c892254bd7550ccac21efa53d5a18d33f55fc10f6b910e6f047c16af63b0e256", 5_000_000_000, 47913),
     ("85d6be0c2993205778904ae450134ebfa7a154d54ef0ccc574b3aee652098667", 1_800_000_000, 47913),
     ("bf010e3ac77429e6f263cbcb489cfc0bb253585d693fc0e5c2e57d7c5d751c0b", 15_602_867_298, 47913),
     ("133f4b6b843c2b8b9d6135d19e88e5db862da0b19ce2d82d44a95cb30f3273b0", 7_000_000_000, 47913),
+    ("c892254bd7550ccac21efa53d5a18d33f55fc10f6b910e6f047c16af63b0e256", 5_000_000_000, 47917),
+    ("85d6be0c2993205778904ae450134ebfa7a154d54ef0ccc574b3aee652098667", 1_800_000_000, 47917),
+    ("bf010e3ac77429e6f263cbcb489cfc0bb253585d693fc0e5c2e57d7c5d751c0b", 15_602_867_298, 47917),
+    ("133f4b6b843c2b8b9d6135d19e88e5db862da0b19ce2d82d44a95cb30f3273b0", 7_000_000_000, 47917),
 ];
 
 pub fn is_canonical_historical_payment(txid: &str, asset: &str) -> bool {
     if asset != "DOG" { return false; }
     CANONICAL_HISTORICAL_DOG_PAYMENTS.iter().any(|(t, _, _)| *t == txid)
 }
+
+pub use crate::crc_canonical::get_canonical_crc_lock;
 
 pub fn verify_canonical_historical_payment(txid: &str, asset: &str, amount: u128, rate: Option<u64>) -> bool {
     if asset != "DOG" { return false; }

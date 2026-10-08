@@ -10,6 +10,7 @@ pub mod prevout;
 pub mod rejected_txids;
 pub mod crc21_v2;
 pub mod attestation;
+pub mod crc_canonical;
 
 #[cfg(test)]
 pub mod tests { pub mod consensus_tests; }

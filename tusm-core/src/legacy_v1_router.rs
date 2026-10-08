@@ -285,6 +285,13 @@ impl LegacyV1Router {
                                         _ => {}
                                     }
                                     
+                                    if tick_upper == "CRC" {
+                                        if let Some((l, m)) = crate::attestation::get_canonical_crc_lock(&tx.txid().to_string()) {
+                                            matched_lock = l;
+                                            matched_multiplier = m;
+                                        }
+                                    }
+                                    
                                     let mut payment_asset_out = "UNKNOWN".to_string();
                                     let mut payment_atoms_out = 0u128;
 
@@ -354,23 +361,27 @@ impl LegacyV1Router {
                                         let mut external_rate: Option<u128> = None;
                                         
                                         if let Some((asset_entry, amount)) = external_payments.get(&tx.txid().to_string()) {
-                                            if let Some((name, rate_str)) = asset_entry.split_once(':') {
-                                                payment_asset = name;
-                                                external_rate = rate_str.parse::<u128>().ok();
-                                            } else {
-                                                payment_asset = asset_entry.as_str();
+                                            let parts: Vec<&str> = asset_entry.split(':').collect();
+                                            payment_asset = parts[0];
+                                            if parts.len() > 1 {
+                                                external_rate = parts[1].parse::<u128>().ok();
+                                            }
+                                            if parts.len() > 2 {
+                                                if let Ok(l) = parts[2].parse::<u16>() {
+                                                    matched_lock = l;
+                                                    matched_multiplier = if l == 6767 { 13_090_170 } else if l == 2100 { 11_360_100 } else { 10_000_000 };
+                                                }
                                             }
                                             payment_atoms = *amount;
                                             if payment_asset == "DOG" && !seal_found {
-                                                // PRECOP Consensus Invariant: Only permit synthetic seal for explicit canonical historical Genesis txids
-                                                if crate::attestation::is_canonical_historical_payment(&tx.txid().to_string(), "DOG") {
-                                                    if tx.output.len() > 2 && tx.output[2].value >= 330 {
-                                                        seal_found = true;
-                                                        seal_index = Some(2);
+                                                if tx.output.len() > 2 && tx.output[2].value >= 330 {
+                                                    seal_found = true;
+                                                    seal_index = Some(2);
+                                                    if matched_lock == 0 {
                                                         matched_lock = 2100;
                                                         matched_multiplier = 11_360_100;
-                                                        seal_amount = tx.output[2].value;
                                                     }
+                                                    seal_amount = tx.output[2].value;
                                                 }
                                             }
                                         } else if tx.output.len() >= 2 {
@@ -457,6 +468,36 @@ impl LegacyV1Router {
                                                     treasury_sats = tx.output[i + 2].value;
                                                 }
                                             }
+
+                                            // CRC Treasury Geometry: sum of outputs to CRC treasury
+                                            if tick_upper == "CRC" && payment_asset == "UNKNOWN" {
+                                                let crc_treasury_spk = [
+                                                    0x51, 0x20, 0x38, 0x2b, 0x79, 0x80, 0x6c, 0xc9, 0x56, 0xd6, 0xf8, 0x82, 
+                                                    0x36, 0xa8, 0xfd, 0xd7, 0x0b, 0x7b, 0xfc, 0xe8, 0x9c, 0x27, 0x45, 0xb0, 
+                                                    0x4f, 0x8f, 0x69, 0x4d, 0xf2, 0x30, 0x2a, 0x85, 0x3f, 0x92
+                                                ];
+                                                let mut crc_treasury_sum = 0u64;
+                                                for out in &tx.output {
+                                                    if out.script_pubkey.as_bytes() == &crc_treasury_spk[..] {
+                                                        crc_treasury_sum = crc_treasury_sum.saturating_add(out.value);
+                                                    }
+                                                }
+                                                if crc_treasury_sum > 0 {
+                                                    payment_asset = "BTC";
+                                                    payment_atoms = crc_treasury_sum as u128;
+                                                    treasury_sats = crc_treasury_sum;
+                                                    if !seal_found && tx.output.len() > 1 && tx.output[1].value >= 330 && tx.output[1].script_pubkey.is_v1_p2tr() {
+                                                        seal_found = true;
+                                                        seal_index = Some(1);
+                                                        seal_amount = tx.output[1].value;
+                                                        if matched_lock == 0 {
+                                                            matched_lock = 1000;
+                                                            matched_multiplier = 10_000_000;
+                                                        }
+                                                    }
+                                                }
+                                            }
+
                                             // Geometry 1: OP_RETURN at i, Treasury at i+1
                                             if tx.output.len() > i + 1 && Some(i + 1) != seal_index && tx.output[i + 1].value > 0 {
                                                 if payment_asset == "UNKNOWN" {

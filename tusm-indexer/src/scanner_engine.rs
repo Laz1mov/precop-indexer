@@ -702,10 +702,15 @@ pub fn load_verified_external_payments(path: &str) -> std::collections::HashMap<
                         continue;
                     }
 
-                    let asset_key = if let Some(r) = rate {
-                        format!("{}:{}", asset, r)
-                    } else {
-                        asset.to_string()
+                    let lock_opt = val.get("lock").and_then(|v| {
+                        v.as_u64().map(|n| n as u16).or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+                    });
+
+                    let asset_key = match (rate, lock_opt) {
+                        (Some(r), Some(l)) => format!("{}:{}:{}", asset, r, l),
+                        (Some(r), None) => format!("{}:{}", asset, r),
+                        (None, Some(l)) => format!("{}:0:{}", asset, l),
+                        (None, None) => asset.to_string(),
                     };
                     verified.insert(txid, (asset_key, amount));
                 }
