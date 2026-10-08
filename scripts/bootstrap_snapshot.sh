@@ -53,6 +53,12 @@ if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
 fi
 echo "SHA-256 checksum verified successfully ($ACTUAL_SHA256)."
 
+echo "Verifying archive member paths against path traversal..."
+if tar -tzf "$ARCHIVE" | grep -E '(^|/)\.\.(/|$)'; then
+    echo "ERROR: Refusing extraction: archive contains dangerous '..' path traversal components!"
+    exit 1
+fi
+
 echo "Extracting snapshot safely to $DATA_DIR..."
 tar -xzf "$ARCHIVE" -C "$DATA_DIR" --no-same-owner
 

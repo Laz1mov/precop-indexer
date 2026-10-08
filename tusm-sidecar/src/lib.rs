@@ -105,6 +105,7 @@ pub struct SidecarConfig {
     pub unisat_api_key: String,
     pub poll_interval_secs: u64,
     pub http_port: u16,
+    pub attestation_secret: String,
 }
 
 impl Default for SidecarConfig {
@@ -139,6 +140,7 @@ impl Default for SidecarConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8085),
+            attestation_secret: std::env::var("SIDECAR_ATTESTATION_SECRET").unwrap_or_default(),
         }
     }
 }
@@ -159,6 +161,7 @@ impl SidecarEngine {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(12))
             .build()
             .unwrap_or_default();
@@ -166,24 +169,35 @@ impl SidecarEngine {
         let mut payments_map = HashMap::new();
         if let Ok(content) = std::fs::read_to_string(&config.target_output_file) {
             if let Ok(mut parsed) = serde_json::from_str::<HashMap<String, VerifiedPayment>>(&content) {
-                let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
-                    .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
-                let mut upgraded = false;
-                for (txid, payment) in parsed.iter_mut() {
-                    if payment.signature.is_none() {
-                        let sig = tusm_core::attestation::create_attestation_hmac(
-                            txid,
-                            &payment.asset,
-                            payment.amount,
-                            payment.rate,
-                            &secret,
-                        );
-                        payment.signature = Some(sig);
-                        upgraded = true;
+                let secret = config.attestation_secret.clone();
+                if !secret.is_empty() {
+                    let mut upgraded = false;
+                    for (txid, payment) in parsed.iter_mut() {
+                        let is_valid = payment.signature.as_ref().map_or(false, |sig| {
+                            let expected = tusm_core::attestation::create_attestation_hmac(
+                                txid,
+                                &payment.asset,
+                                payment.amount,
+                                payment.rate,
+                                &secret,
+                            );
+                            sig == &expected
+                        });
+                        if !is_valid {
+                            let sig = tusm_core::attestation::create_attestation_hmac(
+                                txid,
+                                &payment.asset,
+                                payment.amount,
+                                payment.rate,
+                                &secret,
+                            );
+                            payment.signature = Some(sig);
+                            upgraded = true;
+                        }
                     }
-                }
-                if upgraded {
-                    let _ = Self::atomic_write_json(&config.target_output_file, &parsed);
+                    if upgraded {
+                        let _ = Self::atomic_write_json(&config.target_output_file, &parsed);
+                    }
                 }
                 payments_map = parsed;
             }
@@ -239,11 +253,14 @@ impl SidecarEngine {
                                                     .map(|n| n as u32)
                                                     .or(Some(1));
                                                 let display_str = format!("{}.{:05}", amt / 100_000, amt % 100_000);
-                                                let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
-                                                    .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
-                                                let signature = Some(tusm_core::attestation::create_attestation_hmac(
-                                                    txid, "DOG", amt, Some(47913), &secret
-                                                ));
+                                                let secret = &self.config.attestation_secret;
+                                                let signature = if !secret.is_empty() {
+                                                    Some(tusm_core::attestation::create_attestation_hmac(
+                                                        txid, "DOG", amt, Some(47913), secret
+                                                    ))
+                                                } else {
+                                                    None
+                                                };
 
                                                 return Some(VerifiedPayment {
                                                     asset: "DOG".to_string(),
@@ -337,11 +354,14 @@ impl SidecarEngine {
                                                                 .or_else(|| amt_str.parse::<u128>().ok())
                                                                 .unwrap_or(0);
 
-                                                            let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
-                                                                .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
-                                                            let signature = Some(tusm_core::attestation::create_attestation_hmac(
-                                                                txid, &tick, amt_atoms, None, &secret
-                                                            ));
+                                                            let secret = &self.config.attestation_secret;
+                                                            let signature = if !secret.is_empty() {
+                                                                Some(tusm_core::attestation::create_attestation_hmac(
+                                                                    txid, &tick, amt_atoms, None, secret
+                                                                ))
+                                                            } else {
+                                                                None
+                                                            };
 
                                                             return Some(VerifiedPayment {
                                                                 asset: tick.clone(),
@@ -461,11 +481,14 @@ impl SidecarEngine {
                             if asset_id == "840000:3" {
                                 // PRECOP-07 FIX: Pure integer decimal parsing
                                 let amt_atoms = parse_decimal_to_atoms(&amt_str, 5).unwrap_or(0);
-                                let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
-                                    .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
-                                let signature = Some(tusm_core::attestation::create_attestation_hmac(
-                                    txid, "DOG", amt_atoms, Some(47913), &secret
-                                ));
+                                let secret = &self.config.attestation_secret;
+                                let signature = if !secret.is_empty() {
+                                    Some(tusm_core::attestation::create_attestation_hmac(
+                                        txid, "DOG", amt_atoms, Some(47913), secret
+                                    ))
+                                } else {
+                                    None
+                                };
                                 let entry = VerifiedPayment {
                                     asset: "DOG".to_string(),
                                     amount: amt_atoms,
@@ -507,11 +530,14 @@ impl SidecarEngine {
 
                             // PRECOP-07 FIX: Pure integer decimal parsing
                             let amt_atoms = parse_decimal_to_atoms(&amt_str, dec).unwrap_or(0);
-                            let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
-                                .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
-                            let signature = Some(tusm_core::attestation::create_attestation_hmac(
-                                txid, &tick, amt_atoms, None, &secret
-                            ));
+                            let secret = &self.config.attestation_secret;
+                            let signature = if !secret.is_empty() {
+                                Some(tusm_core::attestation::create_attestation_hmac(
+                                    txid, &tick, amt_atoms, None, secret
+                                ))
+                            } else {
+                                None
+                            };
 
                             let entry = VerifiedPayment {
                                 asset: tick.clone(),

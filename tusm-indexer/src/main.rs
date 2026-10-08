@@ -7,6 +7,12 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() {
+    let secret = std::env::var("SIDECAR_ATTESTATION_SECRET").unwrap_or_default();
+    if secret.is_empty() || secret == "precop_oracle_sovereign_secret" {
+        eprintln!("[FATAL SECURITY] SIDECAR_ATTESTATION_SECRET is missing or set to insecure default. Startup aborted.");
+        std::process::exit(1);
+    }
+
     let db_path = std::env::var("TUSM_DB_PATH").unwrap_or_else(|_| "tusm_indexer.db".to_string());
     let state_db = Arc::new(StateDb::new(&db_path));
     let (pg_tx, mut pg_rx) = tokio::sync::mpsc::channel::<(String, precop_tusm_indexer::state_db::SigmaLeaf, Option<(String, String, u128, String, serde_json::Value, u64)>)>(100);

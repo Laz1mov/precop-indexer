@@ -198,7 +198,8 @@ async fn test_inversion_authenticated_attestation_is_accepted() {
     let valid_txid = "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
     let amount: u128 = 5_000_000_000;
     let rate: u64 = 47913;
-    let secret = tusm_core::attestation::DEFAULT_ATTESTATION_SECRET;
+    let secret = "test_inversion_suite_secret_key_rfc2104";
+    std::env::set_var("SIDECAR_ATTESTATION_SECRET", secret);
     let valid_sig = tusm_core::attestation::create_attestation_hmac(valid_txid, "DOG", amount, Some(rate), secret);
 
     let authenticated_payload = serde_json::json!({

@@ -1,8 +1,6 @@
 use std::str::FromStr;
-use bitcoin::hashes::{sha256, Hash};
-
-pub const DEFAULT_ORACLE_PUBKEY: &str = "382b79806cc956d6f88236a8fdd70b7bfce89c2745b04f8f694df2302a853f92";
-pub const DEFAULT_ATTESTATION_SECRET: &str = "precop_oracle_sovereign_secret";
+use bitcoin::hashes::hmac::{Hmac, HmacEngine};
+use bitcoin::hashes::{sha256, Hash, HashEngine};
 
 /// Canonical historical Genesis V1 DOG transactions authorized at block 968,966
 pub const CANONICAL_HISTORICAL_DOG_TXIDS: [&str; 4] = [
@@ -22,6 +20,14 @@ pub fn compute_attestation_digest(txid: &str, asset: &str, amount: u128, rate: O
     sha256::Hash::hash(msg.as_bytes()).to_byte_array()
 }
 
+/// Compute true RFC 2104 HMAC-SHA256 over message digest
+pub fn compute_hmac_rfc2104(key: &[u8], message: &[u8]) -> [u8; 32] {
+    let mut engine = HmacEngine::<sha256::Hash>::new(key);
+    engine.input(message);
+    let hmac = Hmac::<sha256::Hash>::from_engine(engine);
+    hmac.to_byte_array()
+}
+
 pub fn verify_attestation_signature(txid: &str, asset: &str, amount: u128, rate: Option<u64>, sig_hex: &str) -> bool {
     let digest = compute_attestation_digest(txid, asset, amount, rate);
     
@@ -30,17 +36,21 @@ pub fn verify_attestation_signature(txid: &str, asset: &str, amount: u128, rate:
             // BIP-340 Schnorr signature
             let secp = bitcoin::secp256k1::Secp256k1::verification_only();
             if let Ok(sig) = bitcoin::secp256k1::schnorr::Signature::from_slice(&sig_bytes) {
-                let oracle_pk_str = std::env::var("CANONICAL_ORACLE_PUBKEY").unwrap_or_else(|_| DEFAULT_ORACLE_PUBKEY.to_string());
-                if let Ok(pk) = bitcoin::secp256k1::XOnlyPublicKey::from_str(&oracle_pk_str) {
-                    let msg = bitcoin::secp256k1::Message::from_slice(&digest).unwrap();
-                    return secp.verify_schnorr(&sig, &msg, &pk).is_ok();
+                if let Ok(oracle_pk_str) = std::env::var("CANONICAL_ORACLE_PUBKEY") {
+                    if let Ok(pk) = bitcoin::secp256k1::XOnlyPublicKey::from_str(&oracle_pk_str) {
+                        let msg = bitcoin::secp256k1::Message::from_slice(&digest).unwrap();
+                        return secp.verify_schnorr(&sig, &msg, &pk).is_ok();
+                    }
                 }
             }
         } else if sig_bytes.len() == 32 {
-            // Shared Attestation Secret HMAC-SHA256
-            let secret = std::env::var("SIDECAR_ATTESTATION_SECRET").unwrap_or_else(|_| DEFAULT_ATTESTATION_SECRET.to_string());
-            let expected_hmac = sha256::Hash::hash(format!("{}:{}", hex::encode(digest), secret).as_bytes()).to_byte_array();
-            return sig_bytes.as_slice() == expected_hmac.as_slice();
+            // Shared Attestation Secret HMAC-SHA256 (RFC 2104)
+            if let Ok(secret) = std::env::var("SIDECAR_ATTESTATION_SECRET") {
+                if !secret.is_empty() {
+                    let expected_hmac = compute_hmac_rfc2104(secret.as_bytes(), &digest);
+                    return sig_bytes.as_slice() == expected_hmac.as_slice();
+                }
+            }
         }
     }
     false
@@ -48,6 +58,6 @@ pub fn verify_attestation_signature(txid: &str, asset: &str, amount: u128, rate:
 
 pub fn create_attestation_hmac(txid: &str, asset: &str, amount: u128, rate: Option<u64>, secret: &str) -> String {
     let digest = compute_attestation_digest(txid, asset, amount, rate);
-    let hmac = sha256::Hash::hash(format!("{}:{}", hex::encode(digest), secret).as_bytes()).to_byte_array();
+    let hmac = compute_hmac_rfc2104(secret.as_bytes(), &digest);
     hex::encode(hmac)
 }

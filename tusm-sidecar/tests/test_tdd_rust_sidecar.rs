@@ -24,6 +24,7 @@ async fn test_empty_files_initialization_and_engine_start() {
         unisat_api_key: "".to_string(),
         poll_interval_secs: 15,
         http_port: 8085,
+        attestation_secret: "test_sidecar_attestation_secret_key".to_string(),
     };
 
     let engine = SidecarEngine::new(config);
@@ -51,6 +52,7 @@ async fn test_mock_payment_persistence_and_atomic_formatting() {
         unisat_api_key: "".to_string(),
         poll_interval_secs: 15,
         http_port: 8085,
+        attestation_secret: "test_sidecar_attestation_secret_key".to_string(),
     };
 
     let engine = SidecarEngine::new(config);
@@ -171,6 +173,7 @@ async fn test_live_zero_key_verification_dog_and_ordi() {
         unisat_api_key: "".to_string(),
         poll_interval_secs: 15,
         http_port: 8085,
+        attestation_secret: "test_sidecar_attestation_secret_key".to_string(),
     };
 
     let engine = SidecarEngine::new(config);

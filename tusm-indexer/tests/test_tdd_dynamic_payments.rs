@@ -138,12 +138,14 @@ async fn test_scanner_empty_to_dynamic_external_payment_resolution() {
     assert!(pending_content.contains(&txid_str), "Pending mints must contain candidate txid");
     println!("✅ Pass 1 Passed: Candidate txid logged to pending_mints.jsonl");
 
+    let test_secret = "test_dynamic_payments_secret_rfc2104";
+    std::env::set_var("SIDECAR_ATTESTATION_SECRET", test_secret);
     let sig = tusm_core::attestation::create_attestation_hmac(
         &txid_str,
         "DOG",
         5000000000,
         Some(47913),
-        tusm_core::attestation::DEFAULT_ATTESTATION_SECRET,
+        test_secret,
     );
 
     let mock_verified_payments = serde_json::json!({

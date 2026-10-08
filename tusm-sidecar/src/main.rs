@@ -13,6 +13,12 @@ use tusm_sidecar::{SidecarConfig, SidecarEngine, VerifyRequest, VerifyResponse};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let secret = std::env::var("SIDECAR_ATTESTATION_SECRET").unwrap_or_default();
+    if secret.is_empty() || secret == "precop_oracle_sovereign_secret" {
+        eprintln!("[FATAL SECURITY] SIDECAR_ATTESTATION_SECRET is missing or set to insecure default. Startup aborted.");
+        std::process::exit(1);
+    }
+
     let config = SidecarConfig::default();
     let port = config.http_port;
     let engine = Arc::new(SidecarEngine::new(config));
