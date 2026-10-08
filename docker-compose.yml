@@ -19,6 +19,7 @@ services:
       - TUSM_API_PORT=${TUSM_API_PORT:-8080}
       - TUSM_EXTERNAL_PAYMENTS_PATH=/app/data/external_payments.json
       - TUSM_PENDING_MINTS_PATH=/app/data/pending_mints.jsonl
+      - TUSM_START_BLOCK=${TUSM_START_BLOCK:-967930}
       - SIDECAR_ATTESTATION_SECRET=${SIDECAR_ATTESTATION_SECRET:-precop_oracle_sovereign_secret}
     extra_hosts:
       - "host.docker.internal:host-gateway"
