@@ -693,7 +693,7 @@ pub fn load_verified_external_payments(path: &str) -> std::collections::HashMap<
                             tusm_core::attestation::verify_attestation_signature(&txid, asset, amount, rate, sig_hex)
                         },
                         None => {
-                            tusm_core::attestation::is_canonical_historical_payment(&txid, asset)
+                            tusm_core::attestation::verify_canonical_historical_payment(&txid, asset, amount, rate)
                         }
                     };
 

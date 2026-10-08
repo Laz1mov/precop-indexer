@@ -3,7 +3,6 @@ use bitcoin::absolute::LockTime;
 use bitcoin::hashes::Hash;
 use std::str::FromStr;
 use std::collections::HashMap;
-use hex::FromHex;
 use precop_tusm_indexer::scanner_engine::ScannerEngine;
 use precop_tusm_indexer::state_db::{StateDb, SigmaLeaf};
 use tusm_core::prevout::{Coin, PrevoutError, PrevoutProvider};
@@ -173,6 +172,70 @@ async fn test_scanner_empty_to_dynamic_external_payment_resolution() {
     let final_sigma = scanner.db.get_sigma("CRC").unwrap();
     assert_eq!(final_sigma.supply, 54_429_647_130_000u128, "Exact DOG mint allocation must match");
     println!("✅ Pass 2 Passed: Dynamic external payment reloaded and minted exact 544,296.4713 CRC tokens!");
+
+    // Pass 3: Attack Scenario - Tampering the amount in JSON without valid signature update
+    let tampered_payments = serde_json::json!({
+        txid_str.clone(): {
+            "asset": "DOG",
+            "amount": 99999999999u64, // Tampered amount!
+            "rate": 47913u64,
+            "status": "confirmed",
+            "signature": sig // Old signature for 5000000000
+        }
+    });
+    std::fs::write(&ext_path, serde_json::to_string_pretty(&tampered_payments).unwrap()).unwrap();
+
+    let mut reset_crc = crc_state.clone();
+    reset_crc.supply = 0;
+    scanner.db.commit_block_batch(968894, "0000000000000000000000000000000000000000000000000000000000000000", &[("CRC".to_string(), reset_crc, None)], &[]);
+
+    let ok3 = scanner.process_block(&block, 968966, &provider).await;
+    assert!(ok3, "Block execution should complete");
+    let tampered_sigma = scanner.db.get_sigma("CRC").unwrap();
+    assert_ne!(tampered_sigma.supply, 54_429_647_130_000u128, "Tampered payment amount must NOT mint DOG allocation");
+    assert_eq!(tampered_sigma.supply, 7_986_906_841_309u128, "Tampered payment must fall back strictly to on-chain BTC sats");
+    println!("✅ Pass 3 Passed: Tampered payment amount was rejected by HMAC RFC 2104 signature verification (DOG mint denied)");
+
+    // Pass 4: Attack Scenario - Attestation signed with prohibited default secret
+    let default_secret = "precop_oracle_sovereign_secret";
+    std::env::set_var("SIDECAR_ATTESTATION_SECRET", default_secret);
+    let default_sig = tusm_core::attestation::create_attestation_hmac(
+        &txid_str,
+        "DOG",
+        5000000000,
+        Some(47913),
+        default_secret,
+    );
+    let default_secret_payments = serde_json::json!({
+        txid_str.clone(): {
+            "asset": "DOG",
+            "amount": 5000000000u64,
+            "rate": 47913u64,
+            "status": "confirmed",
+            "signature": default_sig
+        }
+    });
+    std::fs::write(&ext_path, serde_json::to_string_pretty(&default_secret_payments).unwrap()).unwrap();
+    let mut reset_crc2 = crc_state.clone();
+    reset_crc2.supply = 0;
+    scanner.db.commit_block_batch(968894, "0000000000000000000000000000000000000000000000000000000000000000", &[("CRC".to_string(), reset_crc2, None)], &[]);
+    let _ = scanner.process_block(&block, 968966, &provider).await;
+    let def_sigma = scanner.db.get_sigma("CRC").unwrap();
+    assert_ne!(def_sigma.supply, 54_429_647_130_000u128, "Default public secret must NOT mint DOG allocation");
+    assert_eq!(def_sigma.supply, 7_986_906_841_309u128, "Default public secret rejected: fallback to on-chain BTC only");
+    println!("✅ Pass 4 Passed: Default secret 'precop_oracle_sovereign_secret' was strictly rejected");
+
+    // Pass 5: Historical Genesis V1 DOG bound payments verification
+    for (txid, amount, rate) in tusm_core::attestation::CANONICAL_HISTORICAL_DOG_PAYMENTS {
+        assert!(tusm_core::attestation::verify_canonical_historical_payment(txid, "DOG", amount, Some(rate)));
+        // Tampered amount must fail
+        assert!(!tusm_core::attestation::verify_canonical_historical_payment(txid, "DOG", amount + 1, Some(rate)));
+        // Tampered rate must fail
+        assert!(!tusm_core::attestation::verify_canonical_historical_payment(txid, "DOG", amount, Some(rate + 1)));
+        // Non-DOG asset must fail
+        assert!(!tusm_core::attestation::verify_canonical_historical_payment(txid, "ORDI", amount, Some(rate)));
+    }
+    println!("✅ Pass 5 Passed: All 4 canonical historical DOG transactions are strictly bound to their exact amounts and rates");
 
     // Clean up
     let _ = std::fs::remove_dir_all(test_db_path);
