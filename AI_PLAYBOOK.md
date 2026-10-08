@@ -2,7 +2,7 @@
 
 This playbook provides battle-tested, high-precision prompt templates for developers, node operators, quantitative trading engineers, and auditors using Large Language Models (Claude 3.7/Sonnet, GPT-4o, Gemini 1.5 Pro) with the **Precop Consensus Indexer**.
 
-All calculations, formulas, transaction geometries, and constants in this playbook are derived strictly from the canonical consensus implementation in [`tusm-core/src/legacy_v1_router.rs`](./tusm-core/src/legacy_v1_router.rs) and verified against Bitcoin Mainnet up to block **970,509**.
+All calculations, formulas, transaction geometries, and constants in this playbook are derived strictly from the canonical consensus implementation in [`tusm-core/src/legacy_v1_router.rs`](tusm-core/src/legacy_v1_router.rs) and verified against Bitcoin Mainnet up to block **970,509**.
 
 ---
 
@@ -258,7 +258,7 @@ Diagnose node health and verify consensus alignment against the Bitcoin network.
 
 ## 🧪 Automated Prompt Verification & CI/CD with Promptfoo
 
-This repository includes a production-ready **Promptfoo** evaluation harness ([`promptfooconfig.yaml`](./promptfooconfig.yaml)) ensuring that consensus prompts and AI models adhere strictly to Precop Layer 1 rules without hallucinations.
+This repository includes a production-ready **Promptfoo** evaluation harness ([`promptfooconfig.yaml`](promptfooconfig.yaml)) ensuring that consensus prompts and AI models adhere strictly to Precop Layer 1 rules without hallucinations.
 
 ### 1. Run the Test Suite (Local / Deterministic WASM Oracle)
 

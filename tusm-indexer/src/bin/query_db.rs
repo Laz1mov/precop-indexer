@@ -1,8 +1,8 @@
 use precop_tusm_indexer::state_db::StateDb;
 
 fn main() {
-    let db_path = "./tusm_indexer.db";
-    let db = StateDb::new(db_path);
+    let db_path = std::env::args().nth(1).unwrap_or_else(|| "data/tusm_indexer.db".to_string());
+    let db = StateDb::new(&db_path);
     
     println!("=== ADVANCED PRECOPSCAN DB AUDIT ===");
     println!("Database: {}", db_path);

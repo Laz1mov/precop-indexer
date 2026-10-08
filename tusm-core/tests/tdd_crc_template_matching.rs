@@ -323,11 +323,12 @@ fn test_crc_mint_btc_first_mint_07fb() {
 
 #[test]
 fn test_crc_120_canonical_mints_exact_convergence() {
-    let canonical_path = "./tests/fixtures/canonical_mints.json";
-    let raw_cache_path = "./tests/fixtures/raw_mints_cache.json";
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let canonical_path = manifest_dir.join("tests/fixtures/canonical_mints.json");
+    let raw_cache_path = manifest_dir.join("tests/fixtures/raw_mints_cache.json");
     
-    if !std::path::Path::new(canonical_path).exists() || !std::path::Path::new(raw_cache_path).exists() {
-        println!("Skipping 120-mint convergence test: scratch cache files not present.");
+    if !canonical_path.exists() || !raw_cache_path.exists() {
+        println!("Skipping 120-mint convergence test: fixture files not present.");
         return;
     }
     

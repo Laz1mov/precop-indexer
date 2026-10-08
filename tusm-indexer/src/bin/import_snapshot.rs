@@ -40,8 +40,14 @@ fn main() {
     let mut sigmas = Vec::new();
     let mut balances = Vec::new();
 
+    let snapshot_dir = std::env::args().nth(1).unwrap_or_else(|| "snapshot/db/decoded".to_string());
+    let tokens_path = format!("{}/tokens.jsonl", snapshot_dir);
+    let balances_path = format!("{}/balances.jsonl", snapshot_dir);
+
     // 1. Import tokens
-    let tokens_file = File::open("./data/tokens.jsonl").unwrap();
+    let tokens_file = File::open(&tokens_path).unwrap_or_else(|e| {
+        panic!("Failed to open {}: {}", tokens_path, e);
+    });
     let reader = BufReader::new(tokens_file);
     for line in reader.lines() {
         let line = line.unwrap();
@@ -70,7 +76,9 @@ fn main() {
     }
 
     // 2. Import balances
-    let balances_file = File::open("./data/balances.jsonl").unwrap();
+    let balances_file = File::open(&balances_path).unwrap_or_else(|e| {
+        panic!("Failed to open {}: {}", balances_path, e);
+    });
     let reader = BufReader::new(balances_file);
     let mut count = 0;
     for line in reader.lines() {
