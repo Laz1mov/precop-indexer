@@ -165,7 +165,26 @@ impl SidecarEngine {
 
         let mut payments_map = HashMap::new();
         if let Ok(content) = std::fs::read_to_string(&config.target_output_file) {
-            if let Ok(parsed) = serde_json::from_str::<HashMap<String, VerifiedPayment>>(&content) {
+            if let Ok(mut parsed) = serde_json::from_str::<HashMap<String, VerifiedPayment>>(&content) {
+                let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
+                    .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
+                let mut upgraded = false;
+                for (txid, payment) in parsed.iter_mut() {
+                    if payment.signature.is_none() {
+                        let sig = tusm_core::attestation::create_attestation_hmac(
+                            txid,
+                            &payment.asset,
+                            payment.amount,
+                            payment.rate,
+                            &secret,
+                        );
+                        payment.signature = Some(sig);
+                        upgraded = true;
+                    }
+                }
+                if upgraded {
+                    let _ = Self::atomic_write_json(&config.target_output_file, &parsed);
+                }
                 payments_map = parsed;
             }
         }
