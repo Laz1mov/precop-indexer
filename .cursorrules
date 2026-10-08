@@ -1,0 +1,19 @@
+# Cursor Rules — Precop Consensus Indexer
+
+# Language & Toolchain
+- Rust Edition: 2021
+- Standard: Safe Rust only. Never use `unsafe` in `tusm-core`.
+- Tooling: cargo-llvm-cov, proptest, criterion, cargo-audit.
+
+# Architectural Invariants
+1. Mint Speech: OP_RETURN JSON for "op":"mint" must NEVER have an "amt" field.
+2. Transfer Speech: OP_RETURN JSON for "op":"transfer" MUST have an "amt" field.
+3. Treasury Multipliers: Sequence 144 -> 1.618x, 1000 -> 2.0x, 2100 -> 2.27x, 6767 -> 2.618x.
+4. Supply Bounds: Supply must always be clamped to `max_supply`. Use `saturating_add` and `saturating_sub`.
+5. Error Handling: Never use `.unwrap()` in production consensus code. Return explicit `Result<T, RejectReason>` or `PrevoutError`.
+
+# Testing Mandate
+- Every consensus change requires:
+  1. A unit test in `tusm-core/tests/`
+  2. A property test with `proptest` testing at least 500 cases
+  3. Verification that `cargo clippy -p tusm-core --lib` passes with zero warnings
