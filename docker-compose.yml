@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${CONTAINER_INDEXER_NAME:-precop_indexer}
     restart: unless-stopped
+    network_mode: ${NETWORK_MODE:-host}
     ports:
       - "127.0.0.1:${TUSM_API_PORT:-8080}:${TUSM_API_PORT:-8080}"
     environment:
@@ -35,6 +36,7 @@ services:
     entrypoint: ["precop-sidecar"]
     container_name: ${CONTAINER_SIDECAR_NAME:-precop_sidecar}
     restart: always
+    network_mode: ${NETWORK_MODE:-host}
     ports:
       - "127.0.0.1:${SIDECAR_PORT:-8085}:${SIDECAR_PORT:-8085}"
     environment:
