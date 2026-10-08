@@ -10,6 +10,91 @@ use serde_json::Value;
 
 pub use models::{VerifiedPayment, EvidenceFile, EvidenceItem, VerifyRequest, VerifyResponse};
 
+/// Pure integer fixed-point decimal parser. Avoids binary floating-point (f64) precision loss.
+pub fn parse_decimal_to_atoms(s: &str, decimals: u8) -> Option<u128> {
+    let clean = s.trim();
+    if clean.is_empty() {
+        return None;
+    }
+
+    let parts: Vec<&str> = clean.split('.').collect();
+    if parts.len() > 2 {
+        return None;
+    }
+
+    let int_part: u128 = parts[0].parse().ok()?;
+    let multiplier = 10u128.checked_pow(decimals as u32)?;
+    let mut total = int_part.checked_mul(multiplier)?;
+
+    if parts.len() == 2 {
+        let frac_str = parts[1];
+        if !frac_str.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let frac_len = frac_str.len();
+        if frac_len <= decimals as usize {
+            let shift = (decimals as usize) - frac_len;
+            let frac_val: u128 = frac_str.parse().ok()?;
+            let shift_mult = 10u128.checked_pow(shift as u32)?;
+            let frac_scaled = frac_val.checked_mul(shift_mult)?;
+            total = total.checked_add(frac_scaled)?;
+        } else {
+            let (allowed_frac, excess) = frac_str.split_at(decimals as usize);
+            let frac_val: u128 = allowed_frac.parse().ok()?;
+            total = total.checked_add(frac_val)?;
+            // If excess contains non-zero digits, reject precision loss
+            if excess.chars().any(|c| c != '0') {
+                return None;
+            }
+        }
+    }
+    Some(total)
+}
+
+/// SSRF protection: Enforce HTTPS and restrict outbound fetching to trusted inscription indexers.
+pub fn is_allowed_content_url(url_str: &str) -> bool {
+    let parsed = match url::Url::parse(url_str) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+
+    if parsed.scheme() != "https" {
+        return false;
+    }
+
+    let host = match parsed.host_str() {
+        Some(h) => h.to_lowercase(),
+        None => return false,
+    };
+
+    // Explicitly reject private/loopback/link-local/metadata IP addresses
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host.starts_with("127.")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("169.254.")
+        || host.starts_with("172.16.") || host.starts_with("172.17.") || host.starts_with("172.18.")
+        || host.starts_with("172.19.") || host.starts_with("172.2") || host.starts_with("172.30.") || host.starts_with("172.31.")
+        || host == "[::1]" || host == "::1"
+    {
+        return false;
+    }
+
+    // Trusted inscription indexer domain allowlist
+    let trusted_domains = [
+        "unisat.io",
+        "ordinals.com",
+        "api.hiro.so",
+        "ordiscan.com",
+        "ord.io",
+        "mempool.space",
+        "magiceden.io",
+    ];
+
+    trusted_domains.iter().any(|d| host == *d || host.ends_with(&format!(".{}", d)))
+}
+
 #[derive(Debug, Clone)]
 pub struct SidecarConfig {
     pub target_output_file: PathBuf,
@@ -108,9 +193,8 @@ impl SidecarEngine {
         }
     }
 
-    /// 1. Runes Verification via UniSat (Zero API Key)
+    /// 1. Runes Verification via UniSat (Strict Rune ID matching: 840000:3 only)
     pub async fn verify_runes_payment(&self, txid: &str) -> Option<VerifiedPayment> {
-        // Query DOG UTXOs (runeid 840000:3)
         let url = format!(
             "https://wallet-api.unisat.io/v5/runes/utxos?address={}&runeid=840000:3",
             self.config.treasury_address
@@ -125,16 +209,22 @@ impl SidecarEngine {
                                 if let Some(runes) = u.get("runes").and_then(|r| r.as_array()) {
                                     for r in runes {
                                         let rid = r.get("runeid").and_then(|s| s.as_str()).unwrap_or_default();
-                                        let rune_name = r.get("rune").and_then(|s| s.as_str()).unwrap_or_default();
-                                        if rid == "840000:3" || rune_name.contains("DOG") {
+                                        // PRECOP-02 FIX: Strict matching on Rune ID 840000:3 ONLY, never loose substring
+                                        if rid == "840000:3" {
                                             let amt = r.get("amount")
                                                 .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok())))
                                                 .unwrap_or(0) as u128;
                                             if amt > 0 {
+                                                let dest_vout = u.get("vout")
+                                                    .and_then(|v| v.as_u64())
+                                                    .map(|n| n as u32)
+                                                    .or(Some(1));
+                                                let display_str = format!("{}.{:05}", amt / 100_000, amt % 100_000);
+
                                                 return Some(VerifiedPayment {
                                                     asset: "DOG".to_string(),
                                                     amount: amt,
-                                                    amount_display: Some((amt as f64 / 100_000.0).to_string()),
+                                                    amount_display: Some(display_str),
                                                     rate: Some(47913),
                                                     payment_type: "runes".to_string(),
                                                     protocol: "runes".to_string(),
@@ -143,7 +233,7 @@ impl SidecarEngine {
                                                     decimals: Some(5),
                                                     ticker: None,
                                                     destination: Some(self.config.treasury_address.clone()),
-                                                    destination_vout: Some(1),
+                                                    destination_vout: dest_vout,
                                                     seal_vout: Some(2),
                                                     block_height: None,
                                                     inscription_id: None,
@@ -163,12 +253,32 @@ impl SidecarEngine {
         None
     }
 
-    /// 2. BRC-20 Verification via UniSat Inscription Info (Zero API Key)
+    /// 2. BRC-20 Verification via Inscription Info (With strict treasury delivery proof & SSRF protection)
     pub async fn verify_brc20_payment(&self, txid: &str) -> Option<VerifiedPayment> {
         let mempool_url = format!("https://mempool.space/api/tx/{}", txid);
         if let Ok(res) = self.client.get(&mempool_url).send().await {
             if res.status().is_success() {
                 if let Ok(tx_val) = res.json::<Value>().await {
+                    // PRECOP-02 FIX: Verify that the transaction actually delivers an output to treasury!
+                    let mut matched_treasury_vout = None;
+                    if let Some(vouts) = tx_val.get("vout").and_then(|v| v.as_array()) {
+                        for (idx, out) in vouts.iter().enumerate() {
+                            let addr = out.get("scriptpubkey_address").and_then(|a| a.as_str());
+                            if addr == Some(&self.config.treasury_address) {
+                                matched_treasury_vout = Some(idx as u32);
+                                break;
+                            }
+                        }
+                    }
+
+                    let destination_vout = match matched_treasury_vout {
+                        Some(idx) => idx,
+                        None => {
+                            // Transaction does NOT send any output to protocol treasury!
+                            return None;
+                        }
+                    };
+
                     if let Some(vins) = tx_val.get("vin").and_then(|v| v.as_array()) {
                         for vin in vins {
                             let in_txid = vin.get("txid").and_then(|t| t.as_str()).unwrap_or_default();
@@ -182,6 +292,11 @@ impl SidecarEngine {
                                 if u_res.status().is_success() {
                                     if let Ok(u_val) = u_res.json::<Value>().await {
                                         if let Some(content_url) = u_val.get("data").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
+                                            // PRECOP-06 FIX: Strict SSRF protection
+                                            if !is_allowed_content_url(content_url) {
+                                                continue;
+                                            }
+
                                             if let Ok(c_res) = self.client.get(content_url).send().await {
                                                 if c_res.status().is_success() {
                                                     if let Ok(c_val) = c_res.json::<Value>().await {
@@ -191,11 +306,12 @@ impl SidecarEngine {
                                                             let tick = c_val.get("tick").and_then(|v| v.as_str()).unwrap_or_default().to_uppercase();
                                                             let amt_str = c_val.get("amt").and_then(|v| v.as_str()).unwrap_or("0");
                                                             let dec = if tick == "ORDI" { 18u8 } else { 8u8 };
-                                                            let amt_atoms = if let Ok(f) = amt_str.parse::<f64>() {
-                                                                (f * 10f64.powi(dec as i32)).round() as u128
-                                                            } else {
-                                                                amt_str.parse::<u128>().unwrap_or(0)
-                                                            };
+
+                                                            // PRECOP-07 FIX: Pure integer fixed-point decimal arithmetic (no binary f64)
+                                                            let amt_atoms = parse_decimal_to_atoms(amt_str, dec)
+                                                                .or_else(|| amt_str.parse::<u128>().ok())
+                                                                .unwrap_or(0);
+
                                                             return Some(VerifiedPayment {
                                                                 asset: tick.clone(),
                                                                 amount: amt_atoms,
@@ -208,7 +324,7 @@ impl SidecarEngine {
                                                                 decimals: Some(dec),
                                                                 ticker: Some(tick.to_lowercase()),
                                                                 destination: Some(self.config.treasury_address.clone()),
-                                                                destination_vout: Some(1),
+                                                                destination_vout: Some(destination_vout),
                                                                 seal_vout: Some(2),
                                                                 block_height: None,
                                                                 inscription_id: Some(insc_id),
@@ -250,18 +366,22 @@ impl SidecarEngine {
 
         loop {
             let url = format!(
-                "https://wallet-api.unisat.io/v5/address/history?address={}&start={}&limit={}",
+                "https://wallet-api.unisat.io/v5/address/activities?address={}&start={}&limit={}",
                 self.config.treasury_address, start, limit
             );
 
             let res = match self.client.get(&url).send().await {
-                Ok(r) if r.status().is_success() => r,
-                _ => break,
+                Ok(r) => r,
+                Err(_) => break,
             };
 
-            let body: Value = match res.json().await {
-                Ok(v) => v,
-                _ => break,
+            if !res.status().is_success() {
+                break;
+            }
+
+            let body = match res.json::<Value>().await {
+                Ok(b) => b,
+                Err(_) => break,
             };
 
             let data = match body.get("data") {
@@ -269,23 +389,21 @@ impl SidecarEngine {
                 None => break,
             };
 
-            let details = match data.get("detail").and_then(|v| v.as_array()) {
-                Some(d) if !d.is_empty() => d,
-                _ => break,
+            let total = data.get("total").and_then(|t| t.as_u64()).unwrap_or(0);
+            let items = match data.get("list").and_then(|l| l.as_array()) {
+                Some(it) => it,
+                None => break,
             };
 
-            let total = data.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+            if items.is_empty() {
+                break;
+            }
 
-            for item in details {
+            for item in items {
                 let txid = match item.get("txid").and_then(|t| t.as_str()) {
                     Some(t) => t,
                     None => continue,
                 };
-
-                let direction = item.get("direction").and_then(|d| d.as_str()).unwrap_or_default();
-                if direction != "receive" {
-                    continue;
-                }
 
                 if self.payments.read().contains_key(txid) {
                     continue;
@@ -297,17 +415,15 @@ impl SidecarEngine {
                     for r in received {
                         let kind = r.get("kind").and_then(|k| k.as_str()).unwrap_or_default();
                         if kind == "runes" {
-                            let symbol = r.get("displayName")
-                                .or_else(|| r.get("symbol"))
-                                .and_then(|s| s.as_str())
-                                .unwrap_or("RUNE");
                             let asset_id = r.get("assetId").and_then(|s| s.as_str()).unwrap_or_default();
                             let amt_str = r.get("amount")
                                 .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_f64().map(|n| n.to_string())))
                                 .unwrap_or_else(|| "0".to_string());
 
-                            if asset_id == "840000:3" || symbol.contains("DOG") {
-                                let amt_atoms = amt_str.parse::<f64>().map(|f| (f * 100_000.0).round() as u128).unwrap_or(0);
+                            // PRECOP-02 FIX: Strict matching on 840000:3 only
+                            if asset_id == "840000:3" {
+                                // PRECOP-07 FIX: Pure integer decimal parsing
+                                let amt_atoms = parse_decimal_to_atoms(&amt_str, 5).unwrap_or(0);
                                 let entry = VerifiedPayment {
                                     asset: "DOG".to_string(),
                                     amount: amt_atoms,
@@ -340,7 +456,9 @@ impl SidecarEngine {
                                 .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_f64().map(|n| n.to_string())))
                                 .unwrap_or_else(|| "0".to_string());
                             let dec = if tick == "ORDI" { 18u8 } else { 8u8 };
-                            let amt_atoms = amt_str.parse::<f64>().map(|f| (f * 10f64.powi(dec as i32)).round() as u128).unwrap_or(0);
+
+                            // PRECOP-07 FIX: Pure integer decimal parsing
+                            let amt_atoms = parse_decimal_to_atoms(&amt_str, dec).unwrap_or(0);
 
                             let entry = VerifiedPayment {
                                 asset: tick.clone(),
@@ -369,63 +487,67 @@ impl SidecarEngine {
             }
 
             start += limit;
-            if start >= total as usize || start >= 300 {
+            if start >= total as usize || start >= 1000 {
                 break;
             }
         }
+
+        if discovered > 0 {
+            self.save_files();
+        }
+
         discovered
     }
 
-    /// 5. Process Pending Mints Queue from disk
+    /// 5. Monitor and process pending candidate mints
     pub async fn process_pending_mints(&self) -> usize {
-        let p_path = &self.config.pending_mints_path;
-        if !p_path.exists() {
+        let path = &self.config.pending_mints_path;
+        if !path.exists() {
             return 0;
         }
 
-        let content = match std::fs::read_to_string(p_path) {
+        let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(_) => return 0,
         };
 
+        let mut lines: Vec<String> = content.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        if lines.is_empty() {
+            return 0;
+        }
+
         let mut remaining = Vec::new();
-        let mut new_verified = 0;
+        let mut processed = 0;
 
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            let txid = if trimmed.starts_with('{') {
-                if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-                    parsed.get("txid").and_then(|t| t.as_str()).unwrap_or(trimmed).to_string()
-                } else {
-                    trimmed.to_string()
-                }
-            } else {
-                trimmed.to_string()
-            };
-
+        for txid in lines.drain(..) {
             if self.payments.read().contains_key(&txid) {
                 continue;
             }
 
-            if let Some(verified) = self.verify_polymorphic_payment(&txid).await {
-                println!("[Rust Sidecar] Verified payment for candidate txid {}: {} {}", txid, verified.amount, verified.asset);
-                self.payments.write().insert(txid, verified);
-                new_verified += 1;
+            if let Some(payment) = self.verify_polymorphic_payment(&txid).await {
+                println!("[Rust Sidecar] Verified Pending TXID {} -> Asset: {}, Amount: {}", txid, payment.asset, payment.amount);
+                self.payments.write().insert(txid, payment);
+                processed += 1;
             } else {
-                remaining.push(trimmed.to_string());
+                remaining.push(txid);
             }
         }
 
-        // Rewrite remaining pending mints
-        let _ = std::fs::write(p_path, remaining.join("\n"));
-        new_verified
+        let new_content = if remaining.is_empty() {
+            String::new()
+        } else {
+            remaining.join("\n") + "\n"
+        };
+        let _ = std::fs::write(path, new_content);
+
+        if processed > 0 {
+            self.save_files();
+        }
+
+        processed
     }
 
-    /// 6. Save all evidence and external payments atomically
+    /// Persist memory state to disk files (atomic save)
     pub fn save_files(&self) {
         let payments = self.payments.read().clone();
         let mut dog_ev = self.dog_evidence.write();
@@ -435,14 +557,16 @@ impl SidecarEngine {
         for (txid, p) in &payments {
             if p.asset == "DOG" {
                 if !dog_ev.items.iter().any(|i| &i.txid == txid) {
+                    let display_str = p.amount_display.clone()
+                        .unwrap_or_else(|| format!("{}.{:05}", p.amount / 100_000, p.amount % 100_000));
                     dog_ev.items.push(EvidenceItem {
                         txid: txid.clone(),
                         block_height: p.block_height,
                         amount_atoms: p.amount.to_string(),
-                        amount_dog: p.amount_display.clone().or_else(|| Some((p.amount as f64 / 100_000.0).to_string())),
+                        amount_dog: Some(display_str),
                         amount_ordi: None,
                         rate: p.rate.or(Some(47913)),
-                        destination_vout: Some(1),
+                        destination_vout: p.destination_vout.or(Some(1)),
                         seal_vout: Some(2),
                         inscription_id: None,
                         note: Some("Verified by Rust native UniSat sidecar".to_string()),
@@ -450,14 +574,16 @@ impl SidecarEngine {
                 }
             } else if p.asset == "ORDI" {
                 if !ordi_ev.items.iter().any(|i| &i.txid == txid) {
+                    let display_str = p.amount_display.clone()
+                        .unwrap_or_else(|| format!("{}.{:018}", p.amount / 1_000_000_000_000_000_000, p.amount % 1_000_000_000_000_000_000));
                     ordi_ev.items.push(EvidenceItem {
                         txid: txid.clone(),
                         block_height: p.block_height,
                         amount_atoms: p.amount.to_string(),
                         amount_dog: None,
-                        amount_ordi: p.amount_display.clone().or_else(|| Some((p.amount as f64 / 1e18).to_string())),
+                        amount_ordi: Some(display_str),
                         rate: None,
-                        destination_vout: Some(1),
+                        destination_vout: p.destination_vout.or(Some(1)),
                         seal_vout: Some(2),
                         inscription_id: p.inscription_id.clone(),
                         note: Some("Verified by Rust native UniSat sidecar".to_string()),
@@ -468,48 +594,71 @@ impl SidecarEngine {
         dog_ev.count = dog_ev.items.len();
         ordi_ev.count = ordi_ev.items.len();
 
-        // Save atomically
-        let _ = atomic_save_json(&self.config.target_output_file, &payments);
-        let _ = atomic_save_json(&self.config.dog_evidence_file, &*dog_ev);
-        let _ = atomic_save_json(&self.config.ordi_evidence_file, &*ordi_ev);
+        let _ = Self::atomic_write_json(&self.config.target_output_file, &payments);
+        let _ = Self::atomic_write_json(&self.config.dog_evidence_file, &*dog_ev);
+        let _ = Self::atomic_write_json(&self.config.ordi_evidence_file, &*ordi_ev);
     }
 
-    /// Single execution cycle
-    pub async fn run_cycle(&self) -> usize {
-        let h_disc = self.scan_treasury_history().await;
-        let q_disc = self.process_pending_mints().await;
-        let total = h_disc + q_disc;
-        if total > 0 || !self.config.target_output_file.exists() {
-            self.save_files();
+    fn atomic_write_json<T: serde::Serialize>(path: &Path, data: &T) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
         }
-        total
+        let tmp_path = path.with_extension("tmp");
+        let content = serde_json::to_string_pretty(data)?;
+        std::fs::write(&tmp_path, content)?;
+        std::fs::rename(tmp_path, path)?;
+        Ok(())
     }
 
-    /// Continuous background loop
+    /// Background event loop: streams continuous activities and processes pending mint requests
     pub async fn run_loop(&self) {
-        println!("=== Precop Native Rust Sidecar Started ===");
-        println!("  Target File: {:?}", self.config.target_output_file);
-        println!("  Treasury:    {}", self.config.treasury_address);
-        println!("  Interval:    {}s", self.config.poll_interval_secs);
+        let interval = Duration::from_secs(self.config.poll_interval_secs);
+        println!("[Rust Sidecar] Continuous poller started with interval {}s", self.config.poll_interval_secs);
 
         loop {
-            let discovered = self.run_cycle().await;
-            if discovered > 0 {
-                println!("[Rust Sidecar] Discovered and saved {} new payments.", discovered);
-            }
-            tokio::time::sleep(Duration::from_secs(self.config.poll_interval_secs)).await;
+            let _ = self.scan_treasury_history().await;
+            let _ = self.process_pending_mints().await;
+            tokio::time::sleep(interval).await;
         }
     }
 }
 
-fn atomic_save_json<T: serde::Serialize>(path: &Path, data: &T) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_exact_integer_decimal_parsing_no_f64_precision_loss() {
+        // Test case from the auditor's PoC that failed on binary f64:
+        let s = "9007199254740.993";
+        let atoms = parse_decimal_to_atoms(s, 18).expect("Must parse exactly without f64");
+        // Exact integer representation: 9007199254740 * 10^18 + 993 * 10^15
+        let expected: u128 = 9007199254740993000000000000000;
+        assert_eq!(atoms, expected, "Must be exact to the atom, zero float precision drift");
+
+        // DOG runes (5 decimals)
+        let dog_s = "100.5";
+        let dog_atoms = parse_decimal_to_atoms(dog_s, 5).expect("Must parse DOG");
+        assert_eq!(dog_atoms, 10050000);
+
+        // Whole number
+        let whole = "50000";
+        let whole_atoms = parse_decimal_to_atoms(whole, 8).expect("Must parse whole");
+        assert_eq!(whole_atoms, 50000_00000000);
     }
-    let tmp_path = format!("{}.tmp", path.to_string_lossy());
-    let serialized = serde_json::to_string_pretty(data)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-    std::fs::write(&tmp_path, serialized)?;
-    std::fs::rename(&tmp_path, path)?;
-    Ok(())
+
+    #[test]
+    fn test_ssrf_allowed_urls() {
+        // Disallowed / dangerous URLs:
+        assert!(!is_allowed_content_url("http://169.254.169.254/latest/meta-data"));
+        assert!(!is_allowed_content_url("http://127.0.0.1:8080/admin"));
+        assert!(!is_allowed_content_url("http://localhost:8085/v1/verify"));
+        assert!(!is_allowed_content_url("https://malicious-attacker.com/payload.json"));
+        assert!(!is_allowed_content_url("ftp://ordinals.com/file"));
+
+        // Allowed trusted indexers:
+        assert!(is_allowed_content_url("https://ordinals.com/content/27d4e5488f5c47de6794b84551502a3c60c1a221908741495fa0b7i0"));
+        assert!(is_allowed_content_url("https://wallet-api.unisat.io/v5/content/abc"));
+        assert!(is_allowed_content_url("https://api.hiro.so/ordinals/v1/inscriptions/abc/content"));
+    }
 }

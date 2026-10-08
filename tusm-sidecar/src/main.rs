@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use axum::{
     extract::{Path, State, Json},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods(Any)
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
         .allow_headers(Any);
 
     let app = Router::new()
@@ -36,7 +36,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(cors)
         .with_state(Arc::clone(&engine));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    // PRECOP-06 FIX: Bind to 127.0.0.1 by default (configurable via SIDECAR_HOST)
+    let host_str = std::env::var("SIDECAR_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let ip: std::net::IpAddr = host_str.parse().unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)));
+    let addr = SocketAddr::from((ip, port));
     println!("[Rust Sidecar] HTTP API listening on http://{}", addr);
 
     axum::Server::bind(&addr)
@@ -74,9 +77,34 @@ async fn get_payment_handler(
 }
 
 async fn verify_payment_handler(
+    headers: HeaderMap,
     State(engine): State<Arc<SidecarEngine>>,
     Json(req): Json<VerifyRequest>,
 ) -> impl IntoResponse {
+    // PRECOP-06 FIX: Enforce optional Bearer token auth if SIDECAR_AUTH_TOKEN is configured
+    if let Ok(expected_token) = std::env::var("SIDECAR_AUTH_TOKEN") {
+        if !expected_token.is_empty() {
+            let auth_header = headers.get("authorization").and_then(|h| h.to_str().ok());
+            let authorized = match auth_header {
+                Some(header_val) if header_val.starts_with("Bearer ") => {
+                    let token = &header_val[7..];
+                    token == expected_token
+                }
+                _ => false,
+            };
+            if !authorized {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(VerifyResponse {
+                        verified: false,
+                        entry: None,
+                        message: Some("Unauthorized: Invalid or missing Bearer token".to_string()),
+                    }),
+                );
+            }
+        }
+    }
+
     let txid = req.txid.trim().to_string();
     if txid.is_empty() {
         return (
@@ -119,7 +147,7 @@ async fn verify_payment_handler(
             Json(VerifyResponse {
                 verified: false,
                 entry: None,
-                message: Some(format!("Transaction {} does not contain a valid DOG or ORDI payment", txid)),
+                message: Some(format!("Transaction {} does not deliver valid DOG or ORDI payment to treasury", txid)),
             }),
         )
     }

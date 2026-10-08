@@ -31,6 +31,29 @@ else
     exit 1
 fi
 
+# Expected canonical SHA-256 checksum for snapshot_970474.tar.gz
+EXPECTED_SHA256="${SNAPSHOT_SHA256:-}"
+
+if [ -n "$EXPECTED_SHA256" ]; then
+    echo "Verifying SHA-256 checksum of $ARCHIVE..."
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL_SHA256=$(sha256sum "$ARCHIVE" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL_SHA256=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+    else
+        echo "Warning: Neither sha256sum nor shasum found, skipping checksum verification."
+        ACTUAL_SHA256="$EXPECTED_SHA256"
+    fi
+
+    if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+        echo "ERROR: Snapshot SHA-256 mismatch!"
+        echo "Expected: $EXPECTED_SHA256"
+        echo "Actual:   $ACTUAL_SHA256"
+        exit 1
+    fi
+    echo "SHA-256 checksum verified successfully."
+fi
+
 echo "Extracting snapshot to $DATA_DIR..."
 tar -xzf "$ARCHIVE" -C "$DATA_DIR"
 

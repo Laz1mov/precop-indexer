@@ -43,9 +43,12 @@ pub fn apply_mint_leaf(
     
     // Check treasury script
     let treasury_script = env.jet_output_script_pubkey_hash(1)?;
-    // We expect a valid treasury hash, verified against a normative standard.
-    // If it doesn't match the required format or is empty, we reject it.
-    if treasury_script.is_empty() {
+    // PRECOP-03 FIX: We expect a valid, non-null, non-empty treasury scriptPubkey hash.
+    const EMPTY_SHA256: [u8; 32] = [
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+    ];
+    if treasury_script == [0u8; 32] || treasury_script == EMPTY_SHA256 {
         return Err(RejectReason::InvalidTreasury);
     }
     

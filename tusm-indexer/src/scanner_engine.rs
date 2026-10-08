@@ -224,10 +224,31 @@ impl ScannerEngine {
         if height > 0 {
             if let Some(prev_hash) = self.db.get_block_hash(height - 1) {
                 if block.header.prev_blockhash.to_string() != prev_hash {
-                    println!("[Scanner] REORG DETECTED at height {}! Rolling back to C = {}", height, height - 2);
-                    self.db.set_last_scanned_height(height - 2);
+                    println!("[Scanner] REORG DETECTED at height {}! Discovering true common ancestor...", height);
                     
-                    let common_ancestor = height - 2;
+                    // PRECOP-05 FIX: Discover the true common ancestor by searching backwards for block.header.prev_blockhash
+                    let target_hash = block.header.prev_blockhash.to_string();
+                    let mut common_ancestor = height.saturating_sub(1);
+                    let mut found_ancestor = false;
+                    
+                    // Search back up to 100 blocks in indexed history
+                    let search_floor = height.saturating_sub(100);
+                    for h in (search_floor..height).rev() {
+                        if let Some(stored_hash) = self.db.get_block_hash(h) {
+                            if stored_hash == target_hash {
+                                common_ancestor = h;
+                                found_ancestor = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_ancestor {
+                        // Fallback: rollback at least 2 blocks
+                        common_ancestor = height.saturating_sub(2);
+                    }
+                    
+                    println!("[Scanner] Rolling back orphaned branch from height {} down to common ancestor {}", height, common_ancestor);
+                    self.db.set_last_scanned_height(common_ancestor);
                     for h in (common_ancestor + 1..=height).rev() {
                         self.db.rollback_block(h);
                     }
@@ -295,9 +316,6 @@ impl ScannerEngine {
                 let key = format!("{}:{}", t, a);
                 local_balances.get(&key).copied().unwrap_or_else(|| db_clone.get_balance(t, a))
             };
-            
-            // CRC-21 Full Protocol Processing
-            crate::crc21_engine::process_tx(tx, &self.db, &block.block_hash().to_string(), height, &resolved_block.prevouts);
 
             if !crate::block_bridge::CandidateExtractor::is_candidate(tx) {
                 continue; // Skip non-candidate transactions to drastically speed up sync
@@ -657,7 +675,12 @@ impl ScannerEngine {
                         ));
                     }
                 }
-                }
+            }
+        }
+
+        // PRECOP-04 FIX: Atomically execute CRC-21 state transitions only after full block validation
+        for tx in &block.txdata {
+            crate::crc21_engine::process_tx(tx, &self.db, &block.block_hash().to_string(), height, &resolved_block.prevouts);
         }
         self.db.commit_block_batch(height, &block.block_hash().to_string(), &sigmas_update, &balances_update);
         true

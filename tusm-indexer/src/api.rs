@@ -50,6 +50,16 @@ pub struct HealthResponse {
     pub rpc: String,
 }
 
+struct RpcHealthCache {
+    last_check: std::time::Instant,
+    tip_height: u64,
+    tip_hash: String,
+    rpc_status: String,
+}
+
+static HEALTH_CACHE: once_cell::sync::Lazy<std::sync::Mutex<Option<RpcHealthCache>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
 #[utoipa::path(
     get,
     path = "/v1/health",
@@ -65,20 +75,41 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let rpc_user = std::env::var("BITCOIN_RPC_USER").unwrap_or_else(|_| "".to_string());
     let rpc_pass = std::env::var("BITCOIN_RPC_PASS").unwrap_or_else(|_| "".to_string());
     
-    let mut tip_height = 0;
-    let mut tip_hash = "N/A".to_string();
-    let mut rpc_status = "down".to_string();
+    let (tip_height, tip_hash, rpc_status) = {
+        let mut cache_guard = HEALTH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let needs_fetch = match *cache_guard {
+            Some(ref c) => c.last_check.elapsed() >= std::time::Duration::from_secs(5),
+            None => true,
+        };
 
-    if let Ok(c) = bitcoincore_rpc::Client::new(&rpc_url, bitcoincore_rpc::Auth::UserPass(rpc_user, rpc_pass)) {
-        use bitcoincore_rpc::RpcApi;
-        if let Ok(tip) = c.get_block_count() {
-            tip_height = tip;
-            rpc_status = "ok".to_string();
-            if let Ok(hash) = c.get_block_hash(tip) {
-                tip_hash = hash.to_string();
+        if needs_fetch {
+            let mut tip_h = 0;
+            let mut tip_hs = "N/A".to_string();
+            let mut rpc_s = "down".to_string();
+
+            if let Ok(c) = bitcoincore_rpc::Client::new(&rpc_url, bitcoincore_rpc::Auth::UserPass(rpc_user, rpc_pass)) {
+                use bitcoincore_rpc::RpcApi;
+                if let Ok(tip) = c.get_block_count() {
+                    tip_h = tip;
+                    rpc_s = "ok".to_string();
+                    if let Ok(hash) = c.get_block_hash(tip) {
+                        tip_hs = hash.to_string();
+                    }
+                }
             }
+
+            *cache_guard = Some(RpcHealthCache {
+                last_check: std::time::Instant::now(),
+                tip_height: tip_h,
+                tip_hash: tip_hs.clone(),
+                rpc_status: rpc_s.clone(),
+            });
+            (tip_h, tip_hs, rpc_s)
+        } else {
+            let c = cache_guard.as_ref().unwrap();
+            (c.tip_height, c.tip_hash.clone(), c.rpc_status.clone())
         }
-    }
+    };
     
     let lag = if tip_height >= scanned as u64 { tip_height - scanned as u64 } else { 0 };
 
@@ -186,8 +217,15 @@ pub struct CursorQuery {
 }
 
 #[utoipa::path(get, path = "/v1/crc20/tokens", responses((status = 200, body = Vec<String>)))]
-pub async fn token_list(Query(_q): Query<CursorQuery>, State(state): State<AppState>) -> Json<Vec<String>> {
-    let tokens = state.db.get_all_tokens().into_iter().map(|(ticker, _)| ticker).collect();
+pub async fn token_list(Query(q): Query<CursorQuery>, State(state): State<AppState>) -> Json<Vec<String>> {
+    let mut tokens: Vec<String> = state.db.get_all_tokens().into_iter().map(|(ticker, _)| ticker).collect();
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    if let Some(ref cursor) = q.cursor {
+        if let Some(pos) = tokens.iter().position(|t| t == cursor) {
+            tokens = tokens.into_iter().skip(pos + 1).collect();
+        }
+    }
+    tokens.truncate(limit);
     Json(tokens)
 }
 
@@ -253,13 +291,26 @@ pub struct HoldersResponse {
 }
 
 #[utoipa::path(get, path = "/v1/crc20/holders/{ticker}", responses((status = 200, body = HoldersResponse)))]
-pub async fn token_holders(Path(ticker): Path<String>, Query(_q): Query<CursorQuery>, State(state): State<AppState>) -> Json<HoldersResponse> {
+pub async fn token_holders(Path(ticker): Path<String>, Query(q): Query<CursorQuery>, State(state): State<AppState>) -> Json<HoldersResponse> {
     let ticker = ticker.to_uppercase();
     let height = state.db.get_last_scanned_height();
     let block_hash = state.db.get_block_hash(height).unwrap_or_default();
+    let mut raw_holders: Vec<(String, u128)> = state.db.get_holders(&ticker);
+    raw_holders.sort_by(|a, b| b.1.cmp(&a.1));
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    if let Some(ref cursor) = q.cursor {
+        if let Some(pos) = raw_holders.iter().position(|(addr, _)| addr == cursor) {
+            raw_holders = raw_holders.into_iter().skip(pos + 1).collect();
+        }
+    }
+    raw_holders.truncate(limit);
+    let holders = raw_holders.into_iter().map(|(addr, bal)| Holder {
+        address: addr,
+        balance: bal.to_string(),
+    }).collect();
     Json(HoldersResponse {
         ticker,
-        holders: vec![], 
+        holders, 
         height,
         block_hash,
     })
@@ -317,7 +368,7 @@ pub struct ActivityResponse {
 }
 
 #[utoipa::path(get, path = "/v1/crc20/activity/{ticker}", responses((status = 200, body = ActivityResponse)))]
-pub async fn token_activity(Path(ticker): Path<String>, Query(_q): Query<CursorQuery>, State(state): State<AppState>) -> Json<ActivityResponse> {
+pub async fn token_activity(Path(ticker): Path<String>, Query(q): Query<CursorQuery>, State(state): State<AppState>) -> Json<ActivityResponse> {
     let height = state.db.get_last_scanned_height();
     let block_hash = state.db.get_block_hash(height).unwrap_or_default();
     
@@ -341,6 +392,14 @@ pub async fn token_activity(Path(ticker): Path<String>, Query(_q): Query<CursorQ
     // Sort from newest to oldest
     items.sort_by(|a, b| b.height.cmp(&a.height));
     
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    if let Some(ref cursor) = q.cursor {
+        if let Some(pos) = items.iter().position(|it| &it.txid == cursor) {
+            items = items.into_iter().skip(pos + 1).collect();
+        }
+    }
+    items.truncate(limit);
+
     Json(ActivityResponse { items, height, block_hash })
 }
 
@@ -349,7 +408,7 @@ pub async fn token_tx(Path(txid): Path<String>, State(state): State<AppState>) -
     let height = state.db.get_last_scanned_height();
     let block_hash = state.db.get_block_hash(height).unwrap_or_default();
     
-    // Very naive search across all tokens for a single txid activity
+    // Search across all tokens for a single txid activity
     let mut items = Vec::new();
     for (ticker, _) in state.db.get_all_tokens() {
         let logs_val = state.db.get_crc20_activity(&ticker);
@@ -380,7 +439,14 @@ pub async fn token_tx(Path(txid): Path<String>, State(state): State<AppState>) -
 #[utoipa::path(get, path = "/v1/crc20/external_payments", responses((status = 200, body = serde_json::Value)))]
 pub async fn external_payments() -> Json<serde_json::Value> {
     let mut data = serde_json::json!({});
-    if let Ok(content) = std::fs::read_to_string("/app/data/external_payments.json") {
+    let path = std::env::var("TUSM_EXTERNAL_PAYMENTS_PATH").unwrap_or_else(|_| {
+        if std::path::Path::new("./data/external_payments.json").exists() {
+            "./data/external_payments.json".to_string()
+        } else {
+            "/app/data/external_payments.json".to_string()
+        }
+    });
+    if let Ok(content) = std::fs::read_to_string(&path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
             data = json;
         }
@@ -437,7 +503,7 @@ pub async fn crc21_collection(Path(id): Path<String>, State(state): State<AppSta
 }
 
 #[utoipa::path(get, path = "/v1/crc21/collections/{id}/items", responses((status = 200, body = Vec<String>)))]
-pub async fn crc21_collection_items(Path(id): Path<String>, Query(_q): Query<CursorQuery>, State(state): State<AppState>) -> Json<Vec<String>> {
+pub async fn crc21_collection_items(Path(id): Path<String>, Query(q): Query<CursorQuery>, State(state): State<AppState>) -> Json<Vec<String>> {
     let mut items = Vec::new();
     let prefix = format!("crc21:item:{}:", id);
     for res in state.db.db.scan_prefix(prefix.as_bytes()) {
@@ -449,6 +515,13 @@ pub async fn crc21_collection_items(Path(id): Path<String>, Query(_q): Query<Cur
             }
         }
     }
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    if let Some(ref cursor) = q.cursor {
+        if let Some(pos) = items.iter().position(|it| it == cursor) {
+            items = items.into_iter().skip(pos + 1).collect();
+        }
+    }
+    items.truncate(limit);
     Json(items)
 }
 
@@ -537,12 +610,12 @@ pub async fn crc21_outpoint(Path((txid, vout)): Path<(String, u32)>, State(state
 }
 
 #[utoipa::path(get, path = "/v1/crc21/activity", responses((status = 200, body = ActivityResponse)))]
-pub async fn crc21_activity(Query(_q): Query<CursorQuery>, State(state): State<AppState>) -> Json<ActivityResponse> {
+pub async fn crc21_activity(Query(q): Query<CursorQuery>, State(state): State<AppState>) -> Json<ActivityResponse> {
     let height = state.db.get_last_scanned_height();
     let block_hash = state.db.get_block_hash(height).unwrap_or_default();
     
     let logs = state.db.get_crc21_logs();
-    let items = logs.into_iter().map(|log| ActivityLog {
+    let mut items: Vec<ActivityLog> = logs.into_iter().map(|log| ActivityLog {
         txid: log["txid"].as_str().unwrap_or("").to_string(),
         event: log["event"].as_str().unwrap_or("").to_string(),
         height: log["height"].as_u64().unwrap_or(0) as u32,
@@ -550,6 +623,14 @@ pub async fn crc21_activity(Query(_q): Query<CursorQuery>, State(state): State<A
         receiver: "".to_string(),
         raw_json: log.clone(),
     }).collect();
+
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    if let Some(ref cursor) = q.cursor {
+        if let Some(pos) = items.iter().position(|it| &it.txid == cursor) {
+            items = items.into_iter().skip(pos + 1).collect();
+        }
+    }
+    items.truncate(limit);
 
     Json(ActivityResponse { items, height, block_hash })
 }

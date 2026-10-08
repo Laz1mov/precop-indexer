@@ -23,7 +23,7 @@ fn setup_mock_mint_env() -> (BitcoinTxEnv<'static>, [u8; 32]) {
         }],
         output: vec![
             TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new() },
-            TxOut { value: Amount::from_sat(10000), script_pubkey: ScriptBuf::new() },
+            TxOut { value: Amount::from_sat(10000), script_pubkey: ScriptBuf::from_bytes(vec![0x51, 0x20, 0x38, 0x2b]) },
         ],
     });
 

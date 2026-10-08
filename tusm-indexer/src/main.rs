@@ -102,8 +102,10 @@ async fn main() {
 
     let app = precop_tusm_indexer::api::router(app_state);
 
+    let host = std::env::var("TUSM_API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("TUSM_API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("{}:{}", host, port);
+    println!("[Indexer API] Binding server to {}", addr);
     let server = axum::Server::bind(&addr.parse().unwrap())
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal(state_db.clone()));

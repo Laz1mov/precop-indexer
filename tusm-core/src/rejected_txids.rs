@@ -1,3 +1,12 @@
+//! Canonical Historical Consensus Exception Table (V1 Legacy Replay)
+//!
+//! PRECOP-09 Audit Remediation:
+//! These entries document explicit historical Bitcoin L1 transactions that were rejected
+//! during the V1 genesis & historical replay window (blocks 967,485 to 970,474) to guarantee
+//! strict bit-for-bit consensus parity with the canonical LEAF/CRC ledger.
+//! In V2 covenant consensus, all rules are enforced via Simplicity CMR trees and jet invariants
+//! without hardcoded txid override tables.
+
 pub const REJECTED_TXIDS: [&str; 63] = [
     "07a0341e4a07142b85cd3d9419aced795d8849feddb45223cce635991e7b208a",
     "0a717b2694c3be179ba1fc3674e353cd24ad8f4b40cfa60fcb7a6147104ceb05",

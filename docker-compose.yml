@@ -7,8 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: ${CONTAINER_INDEXER_NAME:-precop_indexer}
     restart: unless-stopped
-    network_mode: ${NETWORK_MODE:-host}
+    ports:
+      - "127.0.0.1:${TUSM_API_PORT:-8080}:${TUSM_API_PORT:-8080}"
     environment:
+      - TUSM_API_HOST=0.0.0.0
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-http://127.0.0.1:8332}
       - BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-bitcoin}
       - BITCOIN_RPC_PASS=${BITCOIN_RPC_PASS:-bitcoin}
@@ -16,6 +18,8 @@ services:
       - TUSM_API_PORT=${TUSM_API_PORT:-8080}
       - TUSM_EXTERNAL_PAYMENTS_PATH=/app/data/external_payments.json
       - TUSM_PENDING_MINTS_PATH=/app/data/pending_mints.jsonl
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -31,8 +35,11 @@ services:
     entrypoint: ["precop-sidecar"]
     container_name: ${CONTAINER_SIDECAR_NAME:-precop_sidecar}
     restart: always
-    network_mode: ${NETWORK_MODE:-host}
+    ports:
+      - "127.0.0.1:${SIDECAR_PORT:-8085}:${SIDECAR_PORT:-8085}"
     environment:
+      - SIDECAR_HOST=0.0.0.0
+      - SIDECAR_AUTH_TOKEN=${SIDECAR_AUTH_TOKEN:-}
       - TARGET_OUTPUT_FILE=/app/data/external_payments.json
       - DOG_EVIDENCE_FILE=/app/data/dog-evidence.json
       - ORDI_EVIDENCE_FILE=/app/data/ordi-evidence.json
@@ -41,6 +48,8 @@ services:
       - UNISAT_API_KEY=${UNISAT_API_KEY:-}
       - SIDECAR_PORT=${SIDECAR_PORT:-8085}
       - POLL_INTERVAL_SECS=${POLL_INTERVAL_SECS:-15}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
     healthcheck:
