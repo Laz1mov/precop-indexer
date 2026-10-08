@@ -14,6 +14,15 @@ target/
 *.log
 **/*.log
 
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+*.token
+
 # Runtime data directory exclusions (keep initial schema skeletons)
 data/*
 !data/dog-evidence.json
