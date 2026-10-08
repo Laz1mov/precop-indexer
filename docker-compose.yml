@@ -19,6 +19,7 @@ services:
       - TUSM_API_PORT=${TUSM_API_PORT:-8080}
       - TUSM_EXTERNAL_PAYMENTS_PATH=/app/data/external_payments.json
       - TUSM_PENDING_MINTS_PATH=/app/data/pending_mints.jsonl
+      - SIDECAR_ATTESTATION_SECRET=${SIDECAR_ATTESTATION_SECRET:-precop_oracle_sovereign_secret}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -50,6 +51,7 @@ services:
       - UNISAT_API_KEY=${UNISAT_API_KEY:-}
       - SIDECAR_PORT=${SIDECAR_PORT:-8085}
       - POLL_INTERVAL_SECS=${POLL_INTERVAL_SECS:-15}
+      - SIDECAR_ATTESTATION_SECRET=${SIDECAR_ATTESTATION_SECRET:-precop_oracle_sovereign_secret}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
