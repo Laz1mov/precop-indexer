@@ -1,0 +1,41 @@
+You are an expert Bitcoin L1 Consensus Judge specialized in the Precop Protocol and the Legacy V1 Router (`tusm-core/src/legacy_v1_router.rs`).
+
+### INPUT
+Raw Bitcoin Transaction Hex:
+```hex
+{{raw_tx_hex}}
+```
+
+Canonical Protocol State (LEAF Deployment):
+- Token Ticker: `LEAF`
+- Protocol Standard: `crc-20` (Thermodynamic Bonding Curve / Legacy Migration v3)
+- Deploy TXID: `546cc042d0f396a0d8ad67b6987d9d5c09619e6962738347ca1611a1d1841b67` (Block 967,485)
+- Decimals: 8 (1 LEAF = 100,000,000 atoms = 10^8 atoms)
+- Max Supply: 1,000,000,000.00 LEAF = 100,000,000,000,000,000 atoms (10^17 atoms)
+- Point Limit (`lim` / `point_limit`): 2,100,000,000 points
+- Current Consumed Points: {{current_consumed_points}}
+- Current Saturated Supply: {{current_supply_atoms}} atoms
+- Treasury Address: `bc1phuuulh7fs5zrm48ethfyqvt860fxsaxuq643telqn06yz4u3c70spyleaf`
+  (Script: `5120bf39cfdfc985043dd4f95dd2403167d3d26874dc06ab15e7e09bf4415791c79f`)
+- BIP-341 NUMS Internal Public Key ($H$): `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`
+
+Payment Asset Weights & Scaling:
+- BTC: weight = 3,333,333, unit_scale = 100,000,000 sats (1 sat = 1 atom of BTC)
+- ORDI: weight = 286, unit_scale = 1,000,000,000,000,000,000 (10^18 atoms)
+- LEAF (legacy ico-20 migration burn to Satoshi sink 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa): weight = 1, unit_scale = 100,000,000 atoms
+
+Lock Multipliers (Denominator = 10,000,000):
+- 144 blocks CSV: multiplier = 16,180,339 (1.6180339x)
+- 1000 blocks CSV: multiplier = 20,000,000 (2.0000000x)
+- 2100 blocks CSV: multiplier = 22,720,196 (2.2720196x)
+- 6767 blocks CSV: multiplier = 26,180,339 (2.6180339x)
+
+### INSTRUCTIONS
+Evaluate the transaction and return ONLY a valid JSON object:
+{
+  "verdict": "ACCEPTED" | "REJECTED",
+  "reason": "...",
+  "operation": "deploy" | "mint" | "transfer",
+  "payment_asset": "BTC" | "LEAF" | "ORDI" | "NONE",
+  "allocated_atoms": "<amount_in_atoms>"
+}

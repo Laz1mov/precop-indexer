@@ -81,3 +81,16 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
       - name: Run Dependency Vulnerability Audit
         run: cargo audit
+
+  # Pillar 7: AI Prompt Engineering & Autonomous Consensus Evals (Promptfoo)
+  promptfoo-evals:
+    name: AI Playbook & Consensus Prompt Evals (Promptfoo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Promptfoo Consensus Eval Suite
+        run: npx promptfoo eval --no-cache
+

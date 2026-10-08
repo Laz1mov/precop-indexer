@@ -1,0 +1,76 @@
+# Promptfoo Configuration for Precop L1 Consensus AI Prompts
+# Usage:
+#   npx promptfoo eval
+#
+# To evaluate with live LLM providers (Claude, GPT-4o, Gemini):
+#   npx promptfoo eval --providers anthropic:messages:claude-3-7-sonnet-20250219
+#   npx promptfoo eval --providers openai:gpt-4o
+#   npx promptfoo eval --providers google:gemini-1.5-pro
+
+description: "Precop L1 Consensus Zero-Trust Transaction Validation Suite"
+
+prompts:
+  - file://tests/evals/prompt_leaf_judge.txt
+
+providers:
+  # Default provider uses the deterministic @precop/sdk WASM oracle
+  - file://tests/evals/consensus_judge_provider.cjs
+
+tests:
+  - description: "Genesis LEAF Deploy (Block 967,485 Canonical Mainnet TX)"
+    vars:
+      raw_tx_hex: "020000000001017025057bf9d1e1b78ae0f094cf25d9f19231f6f4bc378e4e224efe352e5666ff0000000000ffffffff0200000000000000008c6a4c897b2270223a226372632d3230222c226f70223a226465706c6f79222c227469636b223a224c454146222c2274797065223a22626f6e64696e67222c226d6178223a2231303030303030303030222c226c696d223a2232313030303030303030222c226c656166223a2231222c226f726469223a22323836222c22627463223a2233333333333333227d782f030000000000160014fd77d6ea663562bf179e775ae05d7c7dcd4ac208014047747e90eae51853c8d80e25b6b5937aa6889a36c33ade3d05074f096f98e0c68fb13851db4d5fb88210be77013b1be3fedc5ee1eff71099bf2f2e4c20b9155300000000"
+      current_consumed_points: 0
+      current_supply_atoms: "0"
+      is_genesis_deploy: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).verdict === 'ACCEPTED'"
+      - type: javascript
+        value: "JSON.parse(output).operation === 'deploy'"
+
+  - description: "Adversarial Attack: Mint payload with injected forbidden 'amt' field"
+    vars:
+      raw_tx_hex: "02000000000101000000000000000000000000000000000000000000000000000000000000000000000000ffffffff020000000000000000286a267b2270223a226372632d3230222c226f70223a226d696e74222c227469636b223a224c454146222c22616d74223a2231303030227d000000000000000000"
+      current_consumed_points: 0
+      current_supply_atoms: "0"
+      adversarial_type: "mint_with_amt"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).verdict === 'REJECTED'"
+      - type: javascript
+        value: "JSON.parse(output).reason.toLowerCase().includes('amt')"
+
+  - description: "Adversarial Attack: Mint attempted after point reserve exhaustion (2.1B points)"
+    vars:
+      raw_tx_hex: "02000000000101000000000000000000000000000000000000000000000000000000000000000000000000ffffffff020000000000000000236a217b2270223a226372632d3230222c226f70223a226d696e74222c227469636b223a224c454146227d000000000000000000"
+      current_consumed_points: 2100000000
+      current_supply_atoms: "100000000000000000"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).verdict === 'REJECTED'"
+      - type: javascript
+        value: "JSON.parse(output).reason.includes('reserve_exhausted')"
+
+  - description: "Adversarial Attack: Malformed / Non-Hex Bitcoin Transaction"
+    vars:
+      raw_tx_hex: "not_a_valid_hex_string_zzzz"
+      current_consumed_points: 0
+      current_supply_atoms: "0"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).verdict === 'REJECTED'"
+
+  - description: "Adversarial Attack: Fake non-protocol transaction (OP_RETURN missing)"
+    vars:
+      raw_tx_hex: "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0100e1f505000000001976a914000000000000000000000000000000000000000088ac00000000"
+      current_consumed_points: 0
+      current_supply_atoms: "0"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).verdict === 'REJECTED'"

@@ -253,3 +253,54 @@ Diagnose node health and verify consensus alignment against the Bitcoin network.
 4. Validate that CRC supply equals `16,205,336,945,176,514` atoms across 120 mints.
 5. Provide a bash monitoring script with automated Discord/Telegram webhooks.
 ```
+
+---
+
+## 🧪 Automated Prompt Verification & CI/CD with Promptfoo
+
+This repository includes a production-ready **Promptfoo** evaluation harness ([`promptfooconfig.yaml`](./promptfooconfig.yaml)) ensuring that consensus prompts and AI models adhere strictly to Precop Layer 1 rules without hallucinations.
+
+### 1. Run the Test Suite (Local / Deterministic WASM Oracle)
+
+Execute the 5-test consensus evaluation matrix directly in your terminal:
+
+```bash
+npx promptfoo eval --no-cache
+```
+
+### 2. Evaluated Test Invariants
+
+| Test Case | Attack / Invariant Vector | Expected Verdict | Assertion |
+| :--- | :--- | :--- | :--- |
+| **Genesis Deploy** | Block 967,485 Mainnet LEAF deploy TX | `ACCEPTED` | Validates `event_type === 'deploy'` and zero initial atoms |
+| **Speech Tampering** | Hostile mint containing forbidden `"amt"` field | `REJECTED` | Catches `"amt"` key violation immediately |
+| **Point Exhaustion** | Mint attempted after `2,100,000,000` point hardcap | `REJECTED` | Enforces `reserve_exhausted` boundary clamp |
+| **Malformed Payload** | Non-hex corrupted transaction bytes | `REJECTED` | Zero unhandled panics or crashes |
+| **Non-Protocol UTXO** | Bitcoin transaction lacking OP_RETURN speech | `REJECTED` | Rejects non-conforming transactions |
+
+### 3. Evaluate Live LLMs (Claude, GPT-4o, Gemini)
+
+To test whether external commercial frontier models adhere to this playbook:
+
+```bash
+# Evaluate Claude 3.7 Sonnet
+export ANTHROPIC_API_KEY="your-key"
+npx promptfoo eval --providers anthropic:messages:claude-3-7-sonnet-20250219
+
+# Evaluate GPT-4o
+export OPENAI_API_KEY="your-key"
+npx promptfoo eval --providers openai:gpt-4o
+
+# Evaluate Gemini 1.5 Pro
+export GEMINI_API_KEY="your-key"
+npx promptfoo eval --providers google:gemini-1.5-pro
+```
+
+### 4. Interactive Web UI
+
+Launch the Promptfoo browser dashboard to review matrices, assertion traces, and token costs:
+
+```bash
+npx promptfoo view
+```
+
