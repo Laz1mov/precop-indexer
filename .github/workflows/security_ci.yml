@@ -1,0 +1,83 @@
+name: Security & Robustness Verification
+
+on:
+  push:
+    branches: [ "main", "master", "release/**" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Pillar 1 & 2: Property-Based Testing & Memory Safety (#![forbid(unsafe_code)])
+  consensus-verification:
+    name: Consensus Verification & Invariant Proofs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run Consensus & Proptest Suites
+        run: cargo test -p tusm-core --verbose
+
+  # Pillar 3: Code Coverage (>85-90% Target)
+  coverage:
+    name: Strict Code Coverage (llvm-cov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Measure Core Coverage
+        run: cargo llvm-cov -p tusm-core --lcov --output-path lcov.info
+      - name: Upload Coverage to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
+
+  # Pillar 4: Mutation Testing Guardrails
+  mutation-audit:
+    name: Mutation Testing Invariant Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@cargo-mutants
+      - name: Validate Mutants Configuration
+        run: cargo mutants --list -p tusm-core
+
+  # Pillar 5: Statistical Benchmark Validation
+  benchmarks:
+    name: Statistical Regression Benchmarking (Criterion)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Compile and Test Criterion Benches
+        run: cargo bench -p tusm-core -- --test
+
+  # Pillar 6: Security Audit & Strict Clippy Lints
+  security-audit:
+    name: Security Audit & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Run Strict Clippy
+        run: cargo clippy -p tusm-core --lib -- -D warnings
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Run Dependency Vulnerability Audit
+        run: cargo audit

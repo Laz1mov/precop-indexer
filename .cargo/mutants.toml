@@ -1,0 +1,19 @@
+# cargo-mutants configuration for Simplicity Unchained / Precop Indexer
+
+# Examine core consensus and cryptography invariant rules
+examine_globs = [
+    "tusm-core/src/law.rs",
+    "tusm-core/src/attestation.rs",
+    "tusm-core/src/astrolabe.rs",
+    "tusm-core/src/crc_canonical.rs",
+]
+
+# Exclude legacy migration helpers and non-consensus modules
+exclude_globs = [
+    "tusm-core/src/legacy_v1_router.rs",
+    "tusm-indexer/*",
+    "tusm-sidecar/*",
+    "tusm-judge/*",
+    "tusm-witness/*",
+    "precop-cli/*",
+]

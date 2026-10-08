@@ -14,7 +14,7 @@ impl LegacyV1Router {
     }
 
     pub fn parse_amount(amt_str: &str) -> Option<u128> {
-        if let Some(_) = amt_str.split('.').nth(1) {
+        if amt_str.split('.').nth(1).is_some() {
             let parts: Vec<&str> = amt_str.split('.').collect();
             let whole = u128::from_str(parts[0]).ok()?;
             
@@ -373,8 +373,8 @@ impl LegacyV1Router {
                                                 }
                                             }
                                             payment_atoms = *amount;
-                                            if payment_asset == "DOG" && !seal_found {
-                                                if tx.output.len() > 2 && tx.output[2].value >= 330 {
+                                            if payment_asset == "DOG" && !seal_found
+                                                && tx.output.len() > 2 && tx.output[2].value >= 330 {
                                                     seal_found = true;
                                                     seal_index = Some(2);
                                                     if matched_lock == 0 {
@@ -383,7 +383,6 @@ impl LegacyV1Router {
                                                     }
                                                     seal_amount = tx.output[2].value;
                                                 }
-                                            }
                                         } else if tx.output.len() >= 2 {
                                             let bons_payload: [u8; 32] = [
                                                 0x77, 0xd8, 0xbb, 0x78, 0xcc, 0x47, 0xa7, 0x15, 
@@ -417,13 +416,12 @@ impl LegacyV1Router {
                                             }
                                             
                                             // Geometry 2: Treasury at 0, OP_RETURN at 1, Seal at 2
-                                            if i == 1 && seal_index == Some(2) && tx.output.len() >= 3 {
-                                                if payment_asset == "UNKNOWN" {
+                                            if i == 1 && seal_index == Some(2) && tx.output.len() >= 3
+                                                && payment_asset == "UNKNOWN" {
                                                     payment_asset = "BTC";
                                                     payment_atoms = tx.output[0].value as u128;
                                                     treasury_sats = tx.output[0].value;
                                                 }
-                                            }
                                             // LEAF Geometry: ico-20/brc-20 at 0, sink at 1, OP_RETURN at 2, Seal at 3
                                             if i == 2 && seal_index == Some(3) && tx.output.len() >= 4 && tx.output[0].script_pubkey.is_op_return() && tx.output[0].script_pubkey.as_bytes().len() > 2 {
                                                 let bytes = tx.output[0].script_pubkey.as_bytes();
@@ -499,28 +497,26 @@ impl LegacyV1Router {
                                             }
 
                                             // Geometry 1: OP_RETURN at i, Treasury at i+1
-                                            if tx.output.len() > i + 1 && Some(i + 1) != seal_index && tx.output[i + 1].value > 0 {
-                                                if payment_asset == "UNKNOWN" {
+                                            if tx.output.len() > i + 1 && Some(i + 1) != seal_index && tx.output[i + 1].value > 0
+                                                && payment_asset == "UNKNOWN" {
                                                     payment_asset = "BTC";
                                                     payment_atoms = tx.output[i + 1].value as u128;
                                                     treasury_sats = tx.output[i + 1].value;
                                                 }
-                                            }
                                             // Geometry 1b: OP_RETURN at i, Seal at i+1, Treasury at i+2
-                                            if seal_index == Some(i + 1) && tx.output.len() > i + 2 {
-                                                if payment_asset == "UNKNOWN" {
+                                            if seal_index == Some(i + 1) && tx.output.len() > i + 2
+                                                && payment_asset == "UNKNOWN" {
                                                     payment_asset = "BTC";
                                                     payment_atoms = tx.output[i + 2].value as u128;
                                                     treasury_sats = tx.output[i + 2].value;
                                                 }
-                                            }
                                         }
                                         
                                         if seal_found && payment_atoms > 0 {
                                             let (weight, unit_scale) = match payment_asset {
-                                                "BTC" => (current_sigma.btc_rate as u128, 100_000_000u128),
-                                                "ORDI" => (current_sigma.ordi_rate as u128, 1_000_000_000_000_000_000u128),
-                                                "LEAF" => (current_sigma.leaf_rate as u128, 100_000_000u128),
+                                                "BTC" => (current_sigma.btc_rate, 100_000_000u128),
+                                                "ORDI" => (current_sigma.ordi_rate, 1_000_000_000_000_000_000u128),
+                                                "LEAF" => (current_sigma.leaf_rate, 100_000_000u128),
                                                 "DOG" => {
                                                     let applied = if let Some(r) = external_rate {
                                                         std::cmp::min(r, current_sigma.dog_rate)
@@ -1516,12 +1512,10 @@ impl LegacyV1Router {
                                                     break;
                                                 }
                                             }
-                                        } else {
-                                            if let Some(s_idx) = seal_index {
-                                                dest_addr = bitcoin::Address::from_script(&tx.output[s_idx].script_pubkey, bitcoin::Network::Bitcoin).map(|a| a.to_string()).unwrap_or_else(|_| "genesis".to_string());
-                                            } else if i + 1 < tx.output.len() {
-                                                dest_addr = bitcoin::Address::from_script(&tx.output[i+1].script_pubkey, bitcoin::Network::Bitcoin).map(|a| a.to_string()).unwrap_or_else(|_| "genesis".to_string());
-                                            }
+                                        } else if let Some(s_idx) = seal_index {
+                                            dest_addr = bitcoin::Address::from_script(&tx.output[s_idx].script_pubkey, bitcoin::Network::Bitcoin).map(|a| a.to_string()).unwrap_or_else(|_| "genesis".to_string());
+                                        } else if i + 1 < tx.output.len() {
+                                            dest_addr = bitcoin::Address::from_script(&tx.output[i+1].script_pubkey, bitcoin::Network::Bitcoin).map(|a| a.to_string()).unwrap_or_else(|_| "genesis".to_string());
                                         }
                                         
                                         let mut output_json = val.clone();
@@ -1559,7 +1553,7 @@ impl LegacyV1Router {
                                             obj.insert("payment_atoms".to_string(), serde_json::json!(payment_atoms_out.to_string()));
                                         }
 
-                                        event = Some((final_dest, allowed_amt, "mint".to_string(), output_json, seal_amount as u64));
+                                        event = Some((final_dest, allowed_amt, "mint".to_string(), output_json, seal_amount));
                                     }
                                 } else if val.get("op").and_then(|v: &serde_json::Value| v.as_str()) == Some("transfer") {
                                     // Explicitly reject known false-positives and fraudulent transfers

@@ -31,7 +31,7 @@ impl<'a> ComplexityEnv for ComplexityAdapter<'a> {
         let max_depth = 32;
         let proof_len = proof.len();
 
-        if proof_len % 32 != 0 || proof_len / 32 > max_depth {
+        if !proof_len.is_multiple_of(32) || proof_len / 32 > max_depth {
             return None; // EXHAUSTION VECTOR PREVENTED
         }
 

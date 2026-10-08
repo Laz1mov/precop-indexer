@@ -1,7 +1,18 @@
-use crate::state::RejectReason;
+pub use crate::state::RejectReason;
 use crate::tx_env_bitcoin::BitcoinTxEnv;
 use crate::complexity_adapter::ComplexityAdapter;
 use crate::astrolabe::verify_astrolabe_anchor;
+
+/// Validate state invariants against protocol physical bounds
+pub fn check_invariants(state: &crate::state::SigmaLeaf) -> Result<(), RejectReason> {
+    if state.halted {
+        return Err(RejectReason::Halted);
+    }
+    if state.max_supply > 0 && state.supply > state.max_supply {
+        return Err(RejectReason::Overflow);
+    }
+    Ok(())
+}
 
 /// V2 Thermodynamic Genesis Deploy
 /// Authorizes a new token deployment by verifying its physical Genesis Astrolabe Anchor.

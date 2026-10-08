@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod astrolabe;
 pub mod law;
 pub mod complexity_adapter;
