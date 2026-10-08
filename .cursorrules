@@ -8,9 +8,10 @@
 # Architectural Invariants
 1. Mint Speech: OP_RETURN JSON for "op":"mint" must NEVER have an "amt" field.
 2. Transfer Speech: OP_RETURN JSON for "op":"transfer" MUST have an "amt" field.
-3. Treasury Multipliers: Sequence 144 -> 1.618x, 1000 -> 2.0x, 2100 -> 2.27x, 6767 -> 2.618x.
-4. Supply Bounds: Supply must always be clamped to `max_supply`. Use `saturating_add` and `saturating_sub`.
-5. Error Handling: Never use `.unwrap()` in production consensus code. Return explicit `Result<T, RejectReason>` or `PrevoutError`.
+3. Lock Multipliers: Exact integers over denominator 10,000,000 (144 -> 16180339, 1000 -> 20000000, 2100 -> 22720196, 6767 -> 26180339).
+4. Atom Precision: All supplies and balances are unsigned 128-bit integers (u128) with 8 decimals (1 token = 10^8 atoms).
+5. Supply Bounds: Supply must always be clamped to `max_supply`. Use `saturating_add` and `saturating_sub`.
+6. Error Handling: Never use `.unwrap()` in production consensus code. Return explicit `Result<T, RejectReason>` or `PrevoutError`.
 
 # Testing Mandate
 - Every consensus change requires:

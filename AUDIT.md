@@ -15,7 +15,7 @@ The consensus state of the indexer has been tested against real Bitcoin Mainnet 
 | Asset | Protocol Standard | Target Supply | Replay / Indexer Supply | Precision | Consistency Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **CRC** | CRC-20 (Astrolabe / PoB) | `162,053,369.45 CRC` | `16,205,336,945,176,514` atoms | 8 decimals | **100.00% MATCH (120/120 mints)** |
-| **LEAF** | CRC-20 (Thermodynamic) | `100,000,000.00 LEAF` | `100,000,000,000,000,000` atoms | 9 decimals | **100.00% MATCH (Saturated)** |
+| **LEAF** | CRC-20 (Thermodynamic) | `1,000,000,000.00 LEAF` | `100,000,000,000,000,000` atoms | 8 decimals | **100.00% MATCH (1B Saturated)** |
 | **BONS** | Covenant Migration | `21,000,000.00 BONS` | `2,100,000,000,000,000` atoms | 8 decimals | **100.00% MATCH (Deterministic)** |
 | **CRC-21** | Taproot NFT / Vaults | Dynamic | Bit-exact CBOR & TapNodeHash | N/A | **100.00% MATCH** |
 

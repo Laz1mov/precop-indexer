@@ -65,10 +65,11 @@ System: You are a strict Bitcoin L1 Consensus Verifier. Your task is to evaluate
 Input: <RAW_TX_HEX>
 Instructions:
 1. Decode inputs, outputs, and OP_RETURN scriptPubKeys.
-2. Check if output[2] carries a valid NUMS Taproot seal (50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0).
+2. Check if a valid Taproot seal output (>= 330 sats) exists, derived via `LegacyV1Router::derive_taproot_for_lock`:
+   Leaf: `<lock> OP_CSV OP_DROP <owner_xonly_pubkey> OP_CHECKSIG`, internal key: BIP-341 NUMS (`50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`).
 3. If OP_RETURN contains "op":"mint", verify that NO "amt" key is present in JSON.
-4. Calculate satoshi allocation using Sequence lock (144 -> 1.618x, 1000 -> 2.0x, 2100 -> 2.27x, 6767 -> 2.618x).
-5. Output formal Verdict: ACCEPTED or REJECTED(Reason).
+4. Calculate token allocation in atoms (u128, 8 decimals) using matched CSV lock multiplier (144 -> 16180339, 1000 -> 20000000, 2100 -> 22720196, 6767 -> 26180339 / 10000000) and point curve formulas.
+5. Output formal Verdict: ACCEPTED or REJECTED(Reason) with exact atom delta.
 ```
 
 ### Pattern B: "Consensus Invariant Prover"
