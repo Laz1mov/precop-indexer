@@ -145,10 +145,13 @@ impl ScannerEngine {
             }
         }
         
-        // Dynamically resume from Sled DB or Epoch 0 genesis
+        // Dynamically resume from Sled DB or Epoch 0 genesis (or explicit TUSM_START_BLOCK)
         let last_scanned = self.db.get_last_scanned_height();
         let mut current_height = if last_scanned == 0 {
-            TUSM_GENESIS_BLOCK
+            std::env::var("TUSM_START_BLOCK")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(TUSM_GENESIS_BLOCK)
         } else {
             last_scanned + 1
         };
