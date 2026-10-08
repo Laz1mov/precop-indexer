@@ -1,4 +1,3 @@
-use bitcoin::hashes::{sha256, Hash};
 
 fn encode_law(law_cmr: &[u8; 32], supply: u128, version: u8, owner_pubkey: &bitcoin::secp256k1::XOnlyPublicKey) -> bitcoin::ScriptBuf {
     // Canonical serialization: OwnerPubKey || OP_CHECKSIGVERIFY || StateCommit(CMR_comf || supply as u128 LE || version)

@@ -6,9 +6,9 @@ use crate::astrolabe::verify_astrolabe_anchor;
 /// V2 Thermodynamic Genesis Deploy
 /// Authorizes a new token deployment by verifying its physical Genesis Astrolabe Anchor.
 pub fn apply_deploy_v2(
-    ticker: &str,
+    _ticker: &str,
     law_cmr: &[u8; 32], 
-    tge_root: &[u8; 32], 
+    _tge_root: &[u8; 32], 
     env: &BitcoinTxEnv
 ) -> Result<(), RejectReason> {
     // 1. In V2, the TGE Utreexo root is mathematically bound inside the Simplicity AST.

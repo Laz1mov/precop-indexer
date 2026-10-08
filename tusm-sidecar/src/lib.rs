@@ -220,6 +220,11 @@ impl SidecarEngine {
                                                     .map(|n| n as u32)
                                                     .or(Some(1));
                                                 let display_str = format!("{}.{:05}", amt / 100_000, amt % 100_000);
+                                                let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
+                                                    .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
+                                                let signature = Some(tusm_core::attestation::create_attestation_hmac(
+                                                    txid, "DOG", amt, Some(47913), &secret
+                                                ));
 
                                                 return Some(VerifiedPayment {
                                                     asset: "DOG".to_string(),
@@ -238,6 +243,7 @@ impl SidecarEngine {
                                                     block_height: None,
                                                     inscription_id: None,
                                                     inscription_number: None,
+                                                    signature,
                                                     status: "confirmed".to_string(),
                                                 });
                                             }
@@ -312,6 +318,12 @@ impl SidecarEngine {
                                                                 .or_else(|| amt_str.parse::<u128>().ok())
                                                                 .unwrap_or(0);
 
+                                                            let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
+                                                                .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
+                                                            let signature = Some(tusm_core::attestation::create_attestation_hmac(
+                                                                txid, &tick, amt_atoms, None, &secret
+                                                            ));
+
                                                             return Some(VerifiedPayment {
                                                                 asset: tick.clone(),
                                                                 amount: amt_atoms,
@@ -329,6 +341,7 @@ impl SidecarEngine {
                                                                 block_height: None,
                                                                 inscription_id: Some(insc_id),
                                                                 inscription_number: None,
+                                                                signature,
                                                                 status: "confirmed".to_string(),
                                                             });
                                                         }
@@ -416,14 +429,24 @@ impl SidecarEngine {
                         let kind = r.get("kind").and_then(|k| k.as_str()).unwrap_or_default();
                         if kind == "runes" {
                             let asset_id = r.get("assetId").and_then(|s| s.as_str()).unwrap_or_default();
+                            // PRECOP-07 FIX: Do NOT use as_f64(), preserve exact literal JSON number representation
                             let amt_str = r.get("amount")
-                                .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_f64().map(|n| n.to_string())))
+                                .and_then(|v| match v {
+                                    serde_json::Value::String(s) => Some(s.clone()),
+                                    serde_json::Value::Number(n) => Some(n.to_string()),
+                                    _ => None,
+                                })
                                 .unwrap_or_else(|| "0".to_string());
 
                             // PRECOP-02 FIX: Strict matching on 840000:3 only
                             if asset_id == "840000:3" {
                                 // PRECOP-07 FIX: Pure integer decimal parsing
                                 let amt_atoms = parse_decimal_to_atoms(&amt_str, 5).unwrap_or(0);
+                                let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
+                                    .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
+                                let signature = Some(tusm_core::attestation::create_attestation_hmac(
+                                    txid, "DOG", amt_atoms, Some(47913), &secret
+                                ));
                                 let entry = VerifiedPayment {
                                     asset: "DOG".to_string(),
                                     amount: amt_atoms,
@@ -441,6 +464,7 @@ impl SidecarEngine {
                                     block_height: height,
                                     inscription_id: None,
                                     inscription_number: None,
+                                    signature,
                                     status: "confirmed".to_string(),
                                 };
                                 self.payments.write().insert(txid.to_string(), entry);
@@ -452,13 +476,23 @@ impl SidecarEngine {
                                 .and_then(|s| s.as_str())
                                 .unwrap_or("BRC20")
                                 .to_uppercase();
+                            // PRECOP-07 FIX: Do NOT use as_f64(), preserve exact literal JSON number representation
                             let amt_str = r.get("amount")
-                                .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_f64().map(|n| n.to_string())))
+                                .and_then(|v| match v {
+                                    serde_json::Value::String(s) => Some(s.clone()),
+                                    serde_json::Value::Number(n) => Some(n.to_string()),
+                                    _ => None,
+                                })
                                 .unwrap_or_else(|| "0".to_string());
                             let dec = if tick == "ORDI" { 18u8 } else { 8u8 };
 
                             // PRECOP-07 FIX: Pure integer decimal parsing
                             let amt_atoms = parse_decimal_to_atoms(&amt_str, dec).unwrap_or(0);
+                            let secret = std::env::var("SIDECAR_ATTESTATION_SECRET")
+                                .unwrap_or_else(|_| tusm_core::attestation::DEFAULT_ATTESTATION_SECRET.to_string());
+                            let signature = Some(tusm_core::attestation::create_attestation_hmac(
+                                txid, &tick, amt_atoms, None, &secret
+                            ));
 
                             let entry = VerifiedPayment {
                                 asset: tick.clone(),
@@ -477,6 +511,7 @@ impl SidecarEngine {
                                 block_height: height,
                                 inscription_id: None,
                                 inscription_number: None,
+                                signature,
                                 status: "confirmed".to_string(),
                             };
                             self.payments.write().insert(txid.to_string(), entry);
@@ -487,7 +522,7 @@ impl SidecarEngine {
             }
 
             start += limit;
-            if start >= total as usize || start >= 1000 {
+            if start >= total as usize {
                 break;
             }
         }

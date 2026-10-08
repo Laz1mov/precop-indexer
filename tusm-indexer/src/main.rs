@@ -1,8 +1,4 @@
-use axum::{
-    extract::{Path, State},
-    routing::get,
-    Router, Json,
-};
+
 use precop_tusm_indexer::state_db::StateDb;
 use precop_tusm_indexer::scanner_engine::ScannerEngine;
 use std::sync::Arc;

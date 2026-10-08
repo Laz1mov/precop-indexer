@@ -31,6 +31,8 @@ pub struct VerifiedPayment {
     pub inscription_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inscription_number: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
     pub status: String,
 }
 

@@ -1,6 +1,6 @@
 use crate::state::RejectReason;
 use bitcoin::hashes::{sha256, Hash, HashEngine};
-use bitcoin::{Sequence, Transaction, TxOut};
+use bitcoin::{Transaction, TxOut};
 
 /// The Physical Transaction Environment
 pub struct BitcoinTxEnv<'a> {

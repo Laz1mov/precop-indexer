@@ -24,7 +24,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin([
+            "http://127.0.0.1".parse().unwrap(),
+            "http://localhost".parse().unwrap(),
+            "http://localhost:3000".parse().unwrap(),
+            "http://localhost:8080".parse().unwrap(),
+            "http://localhost:8085".parse().unwrap(),
+        ])
         .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
         .allow_headers(Any);
 

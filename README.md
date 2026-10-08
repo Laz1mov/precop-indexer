@@ -12,7 +12,7 @@
 
 The **Precop Consensus Indexer** is a high-performance, deterministic Bitcoin Layer-1 state engine written in Rust. It tracks and indexes Simplicity covenants, native Taproot CSV seals, CRC-20 tokens, and CRC-21 sovereign vaults directly from Bitcoin blocks.
 
-To account for multi-protocol deposits (such as **Runes / DOG** and **BRC-20 / ORDI**), the repository includes an autonomous **UniSat Sidecar** (`sidecar_unisat.py`):
+To account for multi-protocol deposits (such as **Runes / DOG** and **BRC-20 / ORDI**), the repository includes an autonomous **Rust Native Sidecar** (`precop-sidecar`):
 - **Zero API Key Requirement**: Connects directly to UniSat's public wallet API (`wallet-api.unisat.io`) without requiring any paid API key.
 - **Dynamic Payment Verification**: Starts from empty payment files and automatically discovers, verifies, and records incoming DOG and ORDI contributions as the indexer encounters candidate transactions.
 - **Shared Data Pipeline**:

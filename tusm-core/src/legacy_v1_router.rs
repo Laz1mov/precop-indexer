@@ -180,10 +180,8 @@ impl LegacyV1Router {
         }
 
         
-        let mut op_return_index = None;
         for (i, output) in tx.output.iter().enumerate() {
             if output.script_pubkey.is_op_return() {
-                op_return_index = Some(i);
                 let mut json_str_opt = None;
                 for instruction in output.script_pubkey.instructions() {
                     if let Ok(bitcoin::script::Instruction::PushBytes(data)) = instruction {
@@ -364,12 +362,15 @@ impl LegacyV1Router {
                                             }
                                             payment_atoms = *amount;
                                             if payment_asset == "DOG" && !seal_found {
-                                                if tx.output.len() > 2 && tx.output[2].value >= 330 {
-                                                    seal_found = true;
-                                                    seal_index = Some(2);
-                                                    matched_lock = 2100;
-                                                    matched_multiplier = 11_360_100;
-                                                    seal_amount = tx.output[2].value;
+                                                // PRECOP Consensus Invariant: Only permit synthetic seal for explicit canonical historical Genesis txids
+                                                if crate::attestation::is_canonical_historical_payment(&tx.txid().to_string(), "DOG") {
+                                                    if tx.output.len() > 2 && tx.output[2].value >= 330 {
+                                                        seal_found = true;
+                                                        seal_index = Some(2);
+                                                        matched_lock = 2100;
+                                                        matched_multiplier = 11_360_100;
+                                                        seal_amount = tx.output[2].value;
+                                                    }
                                                 }
                                             }
                                         } else if tx.output.len() >= 2 {
@@ -401,7 +402,6 @@ impl LegacyV1Router {
                                             // Explicitly reject known false-positives
                                             let txid_str = tx.txid().to_string();
                                             if crate::rejected_txids::REJECTED_TXIDS.contains(&txid_str.as_str()) {
-                                                seal_found = false;
                                                 continue;
                                             }
                                             

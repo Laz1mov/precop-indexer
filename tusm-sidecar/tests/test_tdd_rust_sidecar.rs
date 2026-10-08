@@ -78,6 +78,7 @@ async fn test_mock_payment_persistence_and_atomic_formatting() {
             block_height: Some(968966),
             inscription_id: None,
             inscription_number: None,
+            signature: None,
             status: "confirmed".to_string(),
         },
     );
@@ -101,6 +102,7 @@ async fn test_mock_payment_persistence_and_atomic_formatting() {
             block_height: Some(969100),
             inscription_id: Some("insc_test_ordi_1".to_string()),
             inscription_number: None,
+            signature: None,
             status: "confirmed".to_string(),
         },
     );

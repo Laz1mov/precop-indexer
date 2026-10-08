@@ -536,23 +536,7 @@ pub struct Crc21ItemResponse {
 
 #[utoipa::path(get, path = "/v1/crc21/items/{id}", responses((status = 200, body = Crc21ItemResponse)))]
 pub async fn crc21_item(Path(id): Path<String>, State(state): State<AppState>) -> Result<Json<Crc21ItemResponse>, (StatusCode, String)> {
-    let mut found_item = None;
-    let mut owner_outpoint = String::new();
-    
-    for res in state.db.db.scan_prefix(b"crc21:uitem:") {
-        if let Ok((k, v)) = res {
-            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&v) {
-                if json["item_id"].as_str() == Some(&id) {
-                    found_item = Some(json);
-                    let k_str = String::from_utf8_lossy(&k);
-                    owner_outpoint = k_str.strip_prefix("crc21:uitem:").unwrap_or("").to_string();
-                    break;
-                }
-            }
-        }
-    }
-    
-    if let Some(item) = found_item {
+    if let Some((owner_outpoint, item)) = state.db.get_crc21_item_by_id(&id) {
         let height = state.db.get_last_scanned_height();
         let block_hash = state.db.get_block_hash(height).unwrap_or_default();
         Ok(Json(Crc21ItemResponse {

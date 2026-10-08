@@ -1,11 +1,11 @@
 use wasm_bindgen::prelude::*;
-use tusm_core::state::{SigmaLeaf, RejectReason};
-use bitcoin::{Transaction, TxOut};
+use tusm_core::state::SigmaLeaf;
+use bitcoin::Transaction;
 use bitcoin::consensus::encode::deserialize;
 use serde_json;
 
 #[wasm_bindgen]
-pub fn evaluate_transaction(tx_hex: &str, prevouts_hex: &str, current_sigma_json: &str, crc21_utxos_json: Option<String>) -> String {
+pub fn evaluate_transaction(tx_hex: &str, _prevouts_hex: &str, current_sigma_json: &str, crc21_utxos_json: Option<String>) -> String {
     let tx_bytes = match hex::decode(tx_hex) {
         Ok(b) => b,
         Err(e) => return format!("{{\"error\":\"Invalid tx hex: {}\"}}", e),

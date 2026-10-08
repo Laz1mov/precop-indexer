@@ -7,7 +7,6 @@ pub mod bridge_client;
 pub mod vault_watch;
 
 use once_cell::sync::OnceCell;
-use tokio::sync::mpsc::Sender;
 use bridge_client::BridgePayload;
 
 use tokio::sync::mpsc::UnboundedSender;

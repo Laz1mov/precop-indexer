@@ -138,12 +138,21 @@ async fn test_scanner_empty_to_dynamic_external_payment_resolution() {
     assert!(pending_content.contains(&txid_str), "Pending mints must contain candidate txid");
     println!("✅ Pass 1 Passed: Candidate txid logged to pending_mints.jsonl");
 
+    let sig = tusm_core::attestation::create_attestation_hmac(
+        &txid_str,
+        "DOG",
+        5000000000,
+        Some(47913),
+        tusm_core::attestation::DEFAULT_ATTESTATION_SECRET,
+    );
+
     let mock_verified_payments = serde_json::json!({
         txid_str.clone(): {
             "asset": "DOG",
             "amount": 5000000000u64,
             "rate": 47913u64,
-            "status": "confirmed"
+            "status": "confirmed",
+            "signature": sig
         }
     });
     std::fs::write(&ext_path, serde_json::to_string_pretty(&mock_verified_payments).unwrap()).unwrap();

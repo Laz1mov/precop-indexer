@@ -1,6 +1,4 @@
-use tusm_core::law::apply_mint_leaf;
-use tusm_core::state::RejectReason;
-use crate::state_db::{SigmaLeaf, StateDb};
+use crate::state_db::SigmaLeaf;
 use tusm_core::astrolabe::verify_astrolabe_anchor;
 use tusm_core::tx_env_bitcoin::BitcoinTxEnv;
 use bitcoin::{Block, OutPoint};
@@ -186,15 +184,14 @@ impl ScannerEngine {
                         use bitcoincore_rpc::RpcApi;
                         let crc20_prevouts = rpc.call::<serde_json::Value>("getcrc20block", &[serde_json::json!(hash.to_string())]).ok();
                         
-                        let mut success = false;
                         crate::bridge_client::begin_block();
-                        if crc20_prevouts.is_some() {
+                        let success = if crc20_prevouts.is_some() {
                             let provider = FlorestaPrevoutProvider { block: &block, crc20_prevouts: &crc20_prevouts, rpc: &rpc };
-                            success = self.process_block(&block, current_height as u32, &provider).await;
+                            self.process_block(&block, current_height as u32, &provider).await
                         } else {
                             let provider = HttpPrevoutProvider { rpc: &rpc, block: &block };
-                            success = self.process_block(&block, current_height as u32, &provider).await;
-                        }
+                            self.process_block(&block, current_height as u32, &provider).await
+                        };
                         crate::bridge_client::end_block(success);
 
                         if !success {
@@ -206,7 +203,7 @@ impl ScannerEngine {
                         println!("[Scanner] Processed block {}", current_height);
                         current_height += 1;
                     },
-                    Err(e) => {
+                    Err(_e) => {
                         println!("[Scanner] RPC get_block_hash failed for {}.", current_height);
                         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -268,7 +265,7 @@ impl ScannerEngine {
         let mut local_balances = std::collections::HashMap::new();
         let mut local_sigmas = std::collections::HashMap::new();
 
-        // Dynamically reload external payments for every block (Runes, BRC-20, Ordinals from sidecar)
+        // Dynamically reload cryptographically verified external payments for every block
         let mut active_external_payments = self.external_payments.clone();
         let ext_payments_path = std::env::var("TUSM_EXTERNAL_PAYMENTS_PATH").unwrap_or_else(|_| {
             if std::path::Path::new("./data/external_payments.json").exists() {
@@ -277,25 +274,8 @@ impl ScannerEngine {
                 "/app/data/external_payments.json".to_string()
             }
         });
-        if let Ok(content) = std::fs::read_to_string(&ext_payments_path) {
-            if let Ok(parsed) = serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(&content) {
-                for (txid, val) in parsed {
-                    let asset_opt = val.get("asset").and_then(|v| v.as_str());
-                    let amount_opt = val.get("amount").and_then(|v| {
-                        v.as_u64().map(|n| n as u128).or_else(|| v.as_str().and_then(|s| s.parse::<u128>().ok()))
-                    });
-                    if let (Some(asset), Some(amount)) = (asset_opt, amount_opt) {
-                        let asset_key = if let Some(rate) = val.get("rate").and_then(|v| {
-                            v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
-                        }) {
-                            format!("{}:{}", asset, rate)
-                        } else {
-                            asset.to_string()
-                        };
-                        active_external_payments.insert(txid, (asset_key, amount));
-                    }
-                }
-            }
+        for (k, v) in load_verified_external_payments(&ext_payments_path) {
+            active_external_payments.insert(k, v);
         }
 
         // PREVOUT RESOLUTION (ATOMIC BATCH)
@@ -687,6 +667,50 @@ impl ScannerEngine {
     }
 }
 
+pub fn load_verified_external_payments(path: &str) -> std::collections::HashMap<String, (String, u128)> {
+    let mut verified = std::collections::HashMap::new();
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Ok(parsed) = serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(&content) {
+            for (txid, val) in parsed {
+                if val.get("status").and_then(|s| s.as_str()) != Some("confirmed") {
+                    continue;
+                }
+                let asset_opt = val.get("asset").and_then(|v| v.as_str());
+                let amount_opt = val.get("amount").and_then(|v| {
+                    v.as_u64().map(|n| n as u128).or_else(|| v.as_str().and_then(|s| s.parse::<u128>().ok()))
+                });
+                if let (Some(asset), Some(amount)) = (asset_opt, amount_opt) {
+                    let rate = val.get("rate").and_then(|v| {
+                        v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+                    });
+
+                    let sig_opt = val.get("signature").and_then(|s| s.as_str());
+                    let is_valid = match sig_opt {
+                        Some(sig_hex) => {
+                            tusm_core::attestation::verify_attestation_signature(&txid, asset, amount, rate, sig_hex)
+                        },
+                        None => {
+                            tusm_core::attestation::is_canonical_historical_payment(&txid, asset)
+                        }
+                    };
+
+                    if !is_valid {
+                        println!("[Consensus Security] Rejection: Unauthenticated or forged external payment for txid {}", txid);
+                        continue;
+                    }
+
+                    let asset_key = if let Some(r) = rate {
+                        format!("{}:{}", asset, r)
+                    } else {
+                        asset.to_string()
+                    };
+                    verified.insert(txid, (asset_key, amount));
+                }
+            }
+        }
+    }
+    verified
+}
 
 fn extract_crc20_speech(tx: &bitcoin::Transaction) -> Option<SpeechPayload> {
     for out in &tx.output {

@@ -176,13 +176,46 @@ impl StateDb {
         let data = self.db.get(key).unwrap()?;
         serde_json::from_slice(&data).ok()
     }
+
+    pub fn get_crc21_item_by_id(&self, item_id: &str) -> Option<(String, serde_json::Value)> {
+        let idx_key = format!("crc21:item_idx:{}", item_id);
+        if let Ok(Some(outpoint_bytes)) = self.db.get(&idx_key) {
+            let outpoint = String::from_utf8_lossy(&outpoint_bytes).to_string();
+            if let Some(item) = self.get_crc21_utxo_item(&outpoint) {
+                return Some((outpoint, item));
+            }
+        }
+        // Fallback for legacy items before index was populated
+        for res in self.db.scan_prefix(b"crc21:uitem:") {
+            if let Ok((k, v)) = res {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&v) {
+                    if json["item_id"].as_str() == Some(item_id) {
+                        let k_str = String::from_utf8_lossy(&k);
+                        let outpoint = k_str.strip_prefix("crc21:uitem:").unwrap_or("").to_string();
+                        return Some((outpoint, json));
+                    }
+                }
+            }
+        }
+        None
+    }
     
     pub fn set_crc21_utxo_item(&self, outpoint: &str, data: &serde_json::Value) {
         let key = format!("crc21:uitem:{}", outpoint);
         let _ = self.db.insert(key, serde_json::to_vec(data).unwrap());
+        if let Some(item_id) = data.get("item_id").and_then(|v| v.as_str()) {
+            let idx_key = format!("crc21:item_idx:{}", item_id);
+            let _ = self.db.insert(idx_key, outpoint.as_bytes());
+        }
     }
     
     pub fn delete_crc21_utxo_item(&self, outpoint: &str) {
+        if let Some(data) = self.get_crc21_utxo_item(outpoint) {
+            if let Some(item_id) = data.get("item_id").and_then(|v| v.as_str()) {
+                let idx_key = format!("crc21:item_idx:{}", item_id);
+                let _ = self.db.remove(idx_key);
+            }
+        }
         let key = format!("crc21:uitem:{}", outpoint);
         let _ = self.db.remove(key);
     }

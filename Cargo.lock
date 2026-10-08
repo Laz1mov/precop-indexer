@@ -2032,6 +2032,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower-http 0.4.4",
+ "tusm-core",
  "url",
 ]
 
