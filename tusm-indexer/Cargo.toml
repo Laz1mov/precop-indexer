@@ -1,0 +1,34 @@
+[package]
+name = "precop-tusm-indexer"
+version = "1.1.0-rc3"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Sovereign Bitcoin Layer 1 consensus indexer and state engine"
+
+[dependencies]
+sled = "0.34"
+hex = "0.4"
+sha2 = "0.10"
+axum = "0.6"
+bitcoincore-rpc = "0.17.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.37.0", features = ["full"] }
+tower-http = { version = "0.4.0", features = ["cors"] }
+bitcoin = { version = "0.30", features = ["rand", "serde"] }
+tusm-core = { path = "../tusm-core" }
+futures = "0.3"
+utoipa = { version = "3.3", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "3.1", features = ["axum"] }
+reqwest = { version = "0.13.5", features = ["json"] }
+once_cell = "1.18"
+primitive-types = "0.14.0"
+
+
+[dev-dependencies]
+hyper = "0.14"
+tower = { version = "0.4", features = ["util"] }
+
+[[bin]]
+name = "compare_dbs"
+path = "compare_dbs.rs"

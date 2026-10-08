@@ -1,0 +1,11 @@
+[workspace]
+members = ["tusm-core", "tusm-indexer", "tusm-judge", "tusm-witness", "tusm-sidecar", "precop-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "1.1.0-rc3"
+edition = "2021"
+authors = ["Laz1m0v and Sovereign Bitcoin Contributors <https://github.com/BitcoinWorldTrustFoundation/precop>"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/BitcoinWorldTrustFoundation/precop"
+homepage = "https://github.com/BitcoinWorldTrustFoundation/precop"

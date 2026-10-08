@@ -1,0 +1,9 @@
+target
+data/*.db
+data/tusm_indexer.db
+.git
+.env
+__pycache__
+*.pyc
+tests
+*.log

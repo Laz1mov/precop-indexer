@@ -1,0 +1,28 @@
+[package]
+name = "precop-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Institutional Command-Line Interface (CLI) for Precop Sovereign L1 Consensus & Indexer"
+
+[[bin]]
+name = "precop"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive", "env"] }
+tokio = { version = "1.37.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bitcoin = { version = "0.30", features = ["rand", "serde"] }
+hex = "0.4"
+reqwest = { version = "0.12", features = ["json"] }
+primitive-types = "0.14.0"
+tusm-core = { path = "../tusm-core" }
+tusm-judge = { path = "../tusm-judge" }
+precop-tusm-indexer = { path = "../tusm-indexer" }
+sled = "0.34"
+axum = "0.6"

@@ -1,0 +1,27 @@
+[package]
+name = "precop-sidecar"
+version = "1.1.0-rc3"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Autonomous zero-key cross-protocol verification engine for Bitcoin Layer 1"
+
+[lib]
+name = "tusm_sidecar"
+path = "src/lib.rs"
+
+[[bin]]
+name = "precop-sidecar"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.37.0", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+axum = "0.6"
+tower-http = { version = "0.4.0", features = ["cors"] }
+parking_lot = "0.12"
+bitcoin = { version = "0.30", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.10"

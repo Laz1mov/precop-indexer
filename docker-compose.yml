@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_INDEXER_NAME:-precop_indexer}
+    restart: unless-stopped
+    network_mode: ${NETWORK_MODE:-host}
+    environment:
+      - BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-http://127.0.0.1:8332}
+      - BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-bitcoin}
+      - BITCOIN_RPC_PASS=${BITCOIN_RPC_PASS:-bitcoin}
+      - TUSM_DB_PATH=/app/data/tusm_indexer.db
+      - TUSM_API_PORT=${TUSM_API_PORT:-8080}
+      - TUSM_EXTERNAL_PAYMENTS_PATH=/app/data/external_payments.json
+      - TUSM_PENDING_MINTS_PATH=/app/data/pending_mints.jsonl
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://127.0.0.1:$${TUSM_API_PORT:-8080}/v1/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  sidecar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["precop-sidecar"]
+    container_name: ${CONTAINER_SIDECAR_NAME:-precop_sidecar}
+    restart: always
+    network_mode: ${NETWORK_MODE:-host}
+    environment:
+      - TARGET_OUTPUT_FILE=/app/data/external_payments.json
+      - DOG_EVIDENCE_FILE=/app/data/dog-evidence.json
+      - ORDI_EVIDENCE_FILE=/app/data/ordi-evidence.json
+      - PENDING_MINTS_PATH=/app/data/pending_mints.jsonl
+      - TREASURY_ADDRESS=${TREASURY_ADDRESS:-bc1p8q4hnqrve9tdd7yzx650m4ct007w38p8gkcylrmffherq25987fq4e6ajr}
+      - UNISAT_API_KEY=${UNISAT_API_KEY:-}
+      - SIDECAR_PORT=${SIDECAR_PORT:-8085}
+      - POLL_INTERVAL_SECS=${POLL_INTERVAL_SECS:-15}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://127.0.0.1:$${SIDECAR_PORT:-8085}/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - indexer
