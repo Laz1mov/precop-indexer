@@ -26,18 +26,12 @@ impl<'a, E: TxEnv> Machine<'a, E> {
             },
             AstNode::Jet(id) => {
                 match id {
-                    JetId::GetOutputValue => {
-                        // In a real VM, the input value comes from the active frame
-                        // For the integration, we just call the env to prove linkage
-                        if self.env.get_output_value(0).is_none() {
-                            return Err("Jet GetOutputValue failed".to_string());
-                        }
-                    },
-                    JetId::GetScriptPubkeyHash => {
-                        if self.env.get_script_pubkey_hash(0).is_none() {
-                            return Err("Jet GetScriptPubkeyHash failed".to_string());
-                        }
-                    },
+                    JetId::GetOutputValue if self.env.get_output_value(0).is_none() => {
+                        return Err("Jet GetOutputValue failed".to_string());
+                    }
+                    JetId::GetScriptPubkeyHash if self.env.get_script_pubkey_hash(0).is_none() => {
+                        return Err("Jet GetScriptPubkeyHash failed".to_string());
+                    }
                     _ => {}
                 }
             },

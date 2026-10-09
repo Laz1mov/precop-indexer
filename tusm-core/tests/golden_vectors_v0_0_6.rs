@@ -6,7 +6,7 @@ use std::str::FromStr;
 use tusm_core::legacy_v1_router::LegacyV1Router;
 use tusm_core::state::SigmaLeaf;
 use tusm_core::astrolabe::{compute_astrolabe, verify_astrolabe_anchor};
-use tusm_core::prevout::{Coin, PrevoutError, PrevoutResolver};
+use tusm_core::prevout::Coin;
 use std::collections::HashMap;
 
 fn mock_process<F, B>(
@@ -87,7 +87,7 @@ fn get_state_mock(ticker: &str) -> SigmaLeaf {
 #[test]
 fn test_c1_deploy_leaf() {
     // Rule C1: Deploy LEAF fixture: max=1e9*1e8, lim=2.1e9*1e8, btc_rate=3333333.
-    let secp = Secp256k1::new();
+    let _secp = Secp256k1::new();
     let mut tx = Transaction {
         version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![],
     };
@@ -150,7 +150,7 @@ fn test_c2_mint_saturates_supply() {
     let result = mock_process(&mut tx, get_mock, |_tick, _addr| 0, 100, None, vec![get_nums_point()], huge_miner_fee);
     
     assert!(result.is_some(), "C2 Mint should not return None");
-    let (_ticker, mut next_sigma, event_opt) = result.unwrap();
+    let (_ticker, next_sigma, event_opt) = result.unwrap();
     let event = event_opt.unwrap();
     assert_eq!(event.1, 100_000_000_000_000_000);
     assert_eq!(next_sigma.supply, 100_000_000_000_000_000);
@@ -183,7 +183,7 @@ fn test_c3_mint_rejected_allowed_0() {
 #[test]
 fn test_c4_transfer_1a1z() {
     // Rule C4: Transfer vers 1A1z: supply inchange, emetteur debite, op=transfer.
-    let secp = Secp256k1::new();
+    let _secp = Secp256k1::new();
     let mut tx = Transaction { version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![] };
     
     let payload = r#"{"p":"crc-20","op":"transfer","tick":"LEAF","amt":"1000"}"#.as_bytes();
@@ -334,7 +334,7 @@ fn test_3_4_u256_overflow_attempt() {
     };
 
     // With the V0.0.6 patch, U256 overflow correctly returns None (Dead Ink) instead of gracefully capping to u128::MAX.
-    let result = mock_process(&mut tx, get_huge_state, |_tick, _addr| 0u128, 100, None, vec![get_nums_point()], 1056);
+    let _result = mock_process(&mut tx, get_huge_state, |_tick, _addr| 0u128, 100, None, vec![get_nums_point()], 1056);
 }
 
 // Test 4.1 (Anchor script validation)

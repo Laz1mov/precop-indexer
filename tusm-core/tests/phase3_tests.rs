@@ -4,7 +4,6 @@ use tusm_core::legacy_v1_router::LegacyV1Router;
 use tusm_core::state::SigmaLeaf;
 use tusm_core::prevout::{Coin, PrevoutError, PrevoutResolver};
 use std::collections::HashMap;
-use bitcoin::secp256k1::XOnlyPublicKey;
 use hex::FromHex;
 
 struct NoRpcProvider {
@@ -49,7 +48,7 @@ fn test_legacy_v1_does_not_require_rpc() {
 
     // This signature expects the new architecture
     let external_payments = std::collections::HashMap::new();
-    let result = LegacyV1Router::process(
+    let _result = LegacyV1Router::process(
         &tx,
         get_state,
         get_balance,
@@ -139,20 +138,7 @@ fn test_seal_df2461_real() {
         }
     );
 
-    let get_state = |_tick: &str| SigmaLeaf {
-        supply: 1_000_000, 
-        max_supply: 21_000_000_0000_0000, 
-        limit_per_mint: 1000_0000_0000, 
-        btc_rate: 0, dog_rate: 0, leaf_rate: 0, ordi_rate: 0, // Wait, btc_rate for leaf? Not sure. Let's provide what gives 863.
-        anchor: vec![0u8; 36], height: 0, version: 1, halted: false, consumed_points: 0, };
-    
-    // Actually the btc_rate is in the contract, I need to know the LEAF deploy params.
-    // The previous test in golden_vectors gave `amt = 863`. Let's mock a state that gives 863. 
-    // Or wait, does the code compute 863 purely from `seal_amount = 330`?
-    // Wait, the mint amount is `amt: 863` in the payload? No, payload says `mint LEAF`. No `amt`!
-    // The amount is calculated!
-    
-    let get_state2 = |tick: &str| SigmaLeaf {
+    let get_state2 = |_tick: &str| SigmaLeaf {
         supply: 0, 
         max_supply: 2100000000000000, 
         limit_per_mint: 1000000000000, 

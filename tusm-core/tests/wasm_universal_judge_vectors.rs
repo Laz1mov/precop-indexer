@@ -1,7 +1,4 @@
 use tusm_core::astrolabe::verify_astrolabe_anchor;
-use tusm_core::law::apply_mint_leaf;
-use tusm_core::tx_env_bitcoin::BitcoinTxEnv;
-use bitcoin::consensus::deserialize;
 use hex::FromHex;
 use std::str::FromStr;
 
@@ -12,7 +9,7 @@ fn test_v1_fallback_mode() {
     assert!(height < 970000, "Must be prior to V2 Activation");
     
     // In V1, Astrolabe is bypassed, we parse JSON directly.
-    let raw_tx = Vec::from_hex("01000000000000000000").unwrap(); // mock hex
+    let _raw_tx = Vec::from_hex("01000000000000000000").unwrap(); // mock hex
     // let tx: bitcoin::Transaction = deserialize(&raw_tx).unwrap();
     // let parsed_speech = tusm_core::legacy_v1_router::LegacyV1Router::process_mock(&tx);
     // assert_eq!(parsed_speech.unwrap(), "LEAF");
@@ -25,7 +22,7 @@ fn test_v2_strict_verifier() {
     assert!(height >= 970000, "Must be V2 Thermodynamic era");
 
     // Mock an environment where supply goes from 0 to 50
-    let supply_before = 0;
+    let _supply_before = 0;
     let s_new = 50;
     
     // The required Anchor Script Pubkey computed correctly by the honest miner
@@ -41,7 +38,7 @@ fn test_v2_strict_verifier() {
 /// V2 Fraud Defense: Passing tampered PSBT (Dead Ink)
 #[test]
 fn test_v2_fraud_defense_dead_ink() {
-    let height = 970010;
+    let _height = 970010;
     let s_new = 5000; // Hacker tries to mint 5000
     
     // The Hacker modified the outputs, the script contains an invalid Q point

@@ -3,7 +3,7 @@ use tusm_core::state::SigmaLeaf;
 use bitcoin::{Transaction, TxOut, ScriptBuf, TxIn, OutPoint, Sequence, Witness, Txid};
 use bitcoin::hashes::Hash;
 use std::str::FromStr;
-use tusm_core::prevout::{Coin, PrevoutError, PrevoutResolver};
+use tusm_core::prevout::Coin;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use std::collections::HashMap;
 

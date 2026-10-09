@@ -170,7 +170,7 @@ fn test_crc_mint_dog_c892254b() {
     // Lock: 2100 (x1.136010)
     // Seal: sortie :2
     // CRC alloués: 544 296,4713 CRC = 54 429 647 130 000 atoms
-    let secp = Secp256k1::new();
+    let _secp = Secp256k1::new();
     let mut tx = Transaction {
         version: 2,
         lock_time: LockTime::ZERO,
@@ -292,7 +292,7 @@ fn test_crc_mint_btc_first_mint_07fb() {
         script_pubkey: ScriptBuf::new_v1_p2tr_tweaked(TaprootBuilder::new().finalize(&secp, get_nums_point()).unwrap().output_key()),
     });
 
-    let get_state = |ticker: &str| -> SigmaLeaf {
+    let get_state = |_ticker: &str| -> SigmaLeaf {
         default_crc_state()
     };
 

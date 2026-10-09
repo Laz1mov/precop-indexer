@@ -118,6 +118,7 @@ impl LegacyV1Router {
         ScriptBuf::new_v1_p2tr_tweaked(spend_info.output_key())
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn process<F, B>(tx: &Transaction, mut get_state: F, mut get_balance: B, height: u32, prevout_resolver: &impl PrevoutResolver, external_payments: &std::collections::HashMap<String, (String, u128)>) -> Result<Option<(String, SigmaLeaf, Option<(String, u128, String, serde_json::Value, u64)>)>, PrevoutError> 
     where 
         F: FnMut(&str) -> SigmaLeaf,
@@ -229,14 +230,9 @@ impl LegacyV1Router {
                                     current_sigma.ordi_rate = val.get("ordi").and_then(|v: &serde_json::Value| v.as_str()).and_then(|s| u128::from_str(s).ok()).unwrap_or(0);
                                     current_sigma.consumed_points = 0;
                                     
-                                    let is_bonding = val.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("bonding");
-                                    if is_bonding {
-                                        current_sigma.max_supply = raw_max.saturating_mul(100_000_000);
-                                        current_sigma.limit_per_mint = raw_lim.saturating_mul(100_000_000);
-                                    } else {
-                                        current_sigma.max_supply = raw_max.saturating_mul(100_000_000);
-                                        current_sigma.limit_per_mint = raw_lim.saturating_mul(100_000_000);
-                                    }
+                                    let _is_bonding = val.get("type").and_then(|v: &serde_json::Value| v.as_str()) == Some("bonding");
+                                    current_sigma.max_supply = raw_max.saturating_mul(100_000_000);
+                                    current_sigma.limit_per_mint = raw_lim.saturating_mul(100_000_000);
                                     
                                     current_sigma.height = height;
                                     current_sigma.anchor = vec![0u8; 36];

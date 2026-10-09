@@ -4,7 +4,7 @@ use tusm_core::complexity::parser::parse_bytecode;
 use tusm_core::complexity::cmr::compute_cmr;
 use tusm_core::complexity::machine::Machine;
 use tusm_core::astrolabe::verify_astrolabe_anchor;
-use bitcoin::{Transaction, TxOut, TxIn, ScriptBuf, Sequence, Witness, OutPoint, Amount};
+use bitcoin::{Transaction, TxOut, TxIn, ScriptBuf, Sequence, Witness, OutPoint};
 use bitcoin::script::Builder;
 use bitcoin::opcodes::OP_TRUE;
 use bitcoin::opcodes::all::OP_RETURN;

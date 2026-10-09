@@ -1,8 +1,7 @@
 use tusm_core::legacy_v1_router::LegacyV1Router;
 use tusm_core::prevout::{Coin, PrevoutError, PrevoutResolver};
 use tusm_core::state::SigmaLeaf;
-use bitcoin::{Transaction, TxIn, TxOut, ScriptBuf, OutPoint, Txid, Witness, Address, Network};
-use bitcoin::hashes::Hash;
+use bitcoin::{Transaction, TxIn, TxOut, ScriptBuf, OutPoint, Txid, Witness, Address};
 use std::collections::HashMap;
 use std::str::FromStr;
 
