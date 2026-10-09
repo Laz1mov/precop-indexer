@@ -12,9 +12,9 @@ All calculations, formulas, transaction geometries, and constants in this playbo
 | :--- | :--- | :--- | :--- |
 | **Prompt 1** | Zero-Trust Bitcoin L1 Transaction Validator | Elite Bitcoin Consensus Judge | LEAF / CRC-20 Thermodynamic Point Curve |
 | **Prompt 2** | CRC-20 Astrolabe & Proof-of-Burn Validator | Cryptographic Seal Verifier | CRC (BTC / DOG Payments & 120 Canonical Mints) |
-| **Prompt 3** | Exact BONS Bonding Curve Mathematical Engine | Quantitative DeFi Engineer | BONS $35k USD Integral Curve ($0.00074 → $0.00296) |
-| **Prompt 4** | Indexer REST API Query & Client Generator | Fullstack TypeScript/Rust Engineer | `/v1/crc20/balance`, `/v1/health`, Reorg Handling |
-| **Prompt 5** | Node Health & Reorganization Diagnostics | Site Reliability & DevOps Specialist | RocksDB Anchor State, Genesis Bootstrap vs. Replay |
+| **Prompt 3** | Exact BONS Bonding Curve Mathematical Engine | Quantitative Rust Protocol Engineer | BONS $35k USD Integral Curve ($0.00074 → $0.00296) |
+| **Prompt 4** | Autonomous Bitcoin Ingestion & Scanner Pipeline | Rust Systems & Concurrency Engineer | Block Streaming, Taproot Script Matching, Sled Batching |
+| **Prompt 5** | Sled KV State Consistency & Reorganization Rollbacks | Systems Database & Consensus Specialist | Sled Transactional Trees, Fork Point Rollbacks & UTXO Set Reversion |
 
 ---
 
@@ -207,51 +207,62 @@ Given `<DEPOSIT_SATS>` satoshis and `<CURRENT_CONSUMED_USD_ATOMS>`:
 2. Compute `token_atoms` and convert to token units (`token_atoms / 1e8`).
 3. Compute the effective execution price in satoshis per BONS.
 4. Calculate slippage relative to the instantaneous spot price.
-5. Provide executable TypeScript code using `@precop/sdk` confirming the exact result.
+5. Provide executable Rust unit test code integrating `tusm-core::legacy_v1_router::LegacyV1Router` verifying exact bitwise allocation and consensus bounds.
 ```
 
 ---
 
-## 🌐 Prompt 4: Indexer Client & Webhook Generator
+## 🌐 Prompt 4: Autonomous Rust Bitcoin Ingestion & Scanner Pipeline
 
-Use this prompt to write a resilient Python or TypeScript client listening to the Precop Indexer:
+Use this prompt to build or optimize asynchronous block streaming and Taproot script scanning in `tusm-indexer`:
 
 ```markdown
-You are a Senior Backend Engineer building high-throughput infrastructure.
+You are a Senior Rust Systems & Network Engineer specialized in Bitcoin Core RPC and high-throughput Tokio pipelines.
 
 ### GOAL
-Write a production-grade TypeScript client for the Precop Indexer REST API (running on `http://localhost:8080`).
+Implement an asynchronous, fault-tolerant block streaming and transaction scanning engine for `tusm-indexer/src/scanner_engine.rs` and `bridge_client.rs`.
 
 ### REQUIREMENTS
-1. Fetch health status (`/v1/health`) and verify block height lag is 0.
-2. Query token balances (`/v1/crc20/balance/:ticker/:address`) and parse balances in atoms ($u128$) to token strings with 8 decimals.
-3. Handle network timeouts, HTTP 429 rate-limiting, and indexer reorg rollbacks gracefully.
-4. Zero external heavy dependencies (use native `fetch` and typed interfaces).
-5. Output clean, documented, copy-paste ready TypeScript code.
+1. Connect to Bitcoin Core JSON-RPC (`bitcoincore-rpc`) with credential authentication and exponential backoff on connection drops.
+2. Prefetch blocks in parallel using a bounded sliding window (e.g. 32 blocks) without exhausting system memory.
+3. For each block, extract all transactions:
+   - Identify OP_RETURN scriptPubKeys and parse protocol speeches (`crc-20` / `crc-21`).
+   - Enforce the invariant: if `"op":"mint"`, verify that NO `"amt"` field is present.
+   - Match Taproot seal outputs (>= 330 satoshis) against the BIP-341 NUMS internal key `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`.
+4. Apply state transitions inside an atomic `sled::transaction` block.
+5. Handle SIGINT and SIGTERM gracefully, flushing the Sled database to disk before exiting.
+6. Provide clean, production-grade Rust code adhering to `#![forbid(unsafe_code)]`.
 ```
 
 ---
 
-## 🛠️ Prompt 5: Node Health & Reorganization Diagnostics
+## 🛠️ Prompt 5: Sled KV State Consistency & Reorganization Rollbacks
 
-Use this prompt to inspect node status, database integrity, and chain tip alignment:
+Use this prompt to verify Sled database consistency, detect chain forks, and implement atomic rollback routines:
 
 ```markdown
-You are a Site Reliability Engineer managing an institutional Precop Consensus Node.
+You are a Systems Database and Blockchain Reliability Specialist maintaining the Sled embedded key-value storage engine in `tusm-indexer/src/state_db.rs`.
 
 ### TASK
-Diagnose node health and verify consensus alignment against the Bitcoin network.
+Implement and test a zero-corruption block reorganization rollback engine.
 
-### INPUT DATA
-- Node RPC URL: `http://localhost:8080`
-- Bitcoin Core RPC URL: `http://localhost:8332`
+### SPECIFICATION & DATA LAYOUT
+- Storage Engine: Embedded Sled (`sled::Db`, `sled::Tree`).
+- Trees:
+  - `block_meta`: block height $\to$ block hash, timestamp, and undo-log pointer.
+  - `balances`: `<ticker>:<address>` $\to$ `u128` atoms.
+  - `sigma_leaf`: `<ticker>` $\to$ serialized `SigmaLeaf` state (supply, consumed points).
+  - `utxos`: `<txid>:<vout>` $\to$ spent status and prevout metadata.
+  - `reorg_history`: `<height>` $\to$ serialized transactional delta mutations.
 
-### CHECKLIST TO AUTOMATE
-1. Compare indexer `current_block_height` with Bitcoin Core `getblockcount`. Alert if lag > 0.
-2. Verify RocksDB ledger state hash matches the canonical snapshot anchor.
-3. Validate that LEAF saturated supply equals exactly `100,000,000,000,000,000` atoms.
-4. Validate that CRC supply equals `16,205,336,945,176,514` atoms across 120 mints.
-5. Provide a bash monitoring script with automated Discord/Telegram webhooks.
+### INVARIANTS TO ENFORCE
+1. Reorg Detection: When Bitcoin Core returns a new block whose `prev_block_hash` does not match the local tip hash, locate the common ancestor.
+2. Atomic Rollback: In a single Sled transaction, unwind each reverted block in reverse chronological order:
+   - Re-credit debited balances and subtract minted token atoms.
+   - Restore previous `consumed_points` and `supply` in `sigma_leaf`.
+   - Re-open spent UTXOs and delete created UTXOs.
+3. Verification: Assert that after rolling back $N$ blocks and replaying the winning branch, state hashes converge exactly.
+4. Output a comprehensive Rust test module proving rollback safety across deep (>= 6 blocks) reorgs.
 ```
 
 ---

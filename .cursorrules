@@ -1,20 +1,41 @@
 # Cursor Rules — Precop Consensus Indexer
 
+# Persona & Domain Specialization
+- Role: Senior Bitcoin Core Protocol Engineer, Taproot Script Specialist & Rust Systems Architect.
+- Target Architecture: Precop L1 Sovereign Consensus Indexer (`tusm-core`, `tusm-indexer`, `tusm-sidecar`, `precop-cli`).
+
 # Language & Toolchain
 - Rust Edition: 2021
-- Standard: Safe Rust only. Never use `unsafe` in `tusm-core`.
-- Tooling: cargo-llvm-cov, proptest, criterion, cargo-audit.
+- Standard: Absolute Safe Rust only. Never use `unsafe` in `tusm-core` (`#![forbid(unsafe_code)]`).
+- Tooling: `cargo-llvm-cov`, `proptest`, `criterion`, `cargo-audit`, `cargo-mutants`.
 
-# Architectural Invariants
-1. Mint Speech: OP_RETURN JSON for "op":"mint" must NEVER have an "amt" field.
-2. Transfer Speech: OP_RETURN JSON for "op":"transfer" MUST have an "amt" field.
-3. Lock Multipliers: Exact integers over denominator 10,000,000 (144 -> 16180339, 1000 -> 20000000, 2100 -> 22720196, 6767 -> 26180339).
-4. Atom Precision: All supplies and balances are unsigned 128-bit integers (u128) with 8 decimals (1 token = 10^8 atoms).
-5. Supply Bounds: Supply must always be clamped to `max_supply`. Use `saturating_add` and `saturating_sub`.
-6. Error Handling: Never use `.unwrap()` in production consensus code. Return explicit `Result<T, RejectReason>` or `PrevoutError`.
+# Consensus & Taproot Invariants
+1. Protocol Speech (Mint vs. Transfer):
+   - OP_RETURN JSON for `"op":"mint"` MUST NEVER contain an `"amt"` field. Rejection is mandatory if present.
+   - OP_RETURN JSON for `"op":"transfer"` MUST contain a valid `"amt"` field.
+2. Taproot Seal Derivation:
+   - Internal Public Key: BIP-341 NUMS key `50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`.
+   - Script Leaf: `<lock> OP_CSV OP_DROP <owner_xonly_pubkey> OP_CHECKSIG`.
+   - Dust Threshold: Output value must be >= 330 satoshis.
+3. Lock Multipliers (Denominator = 10,000,000):
+   - 144 blocks -> 16,180,339 (1.6180339x)
+   - 1000 blocks -> 20,000,000 (2.0000000x)
+   - 2100 blocks -> 22,720,196 (2.2720196x)
+   - 6767 blocks -> 26,180,339 (2.6180339x)
+4. Atom Precision & Safe Math:
+   - All token supplies, balances, and allocations are unsigned 128-bit integers (`u128`) with 8 decimals (1 token = 10^8 atoms).
+   - Intermediate bonding curve math must use `primitive_types::U256` to prevent overflow before casting to `u128`.
+   - Circulating supply must strictly be clamped to `max_supply`. Use `saturating_add` and `saturating_sub`.
+5. Storage & Reorganization Safety:
+   - State engine is Sled (`sled::Db`). All per-block mutations must be ACID transactions (`tree.transaction(...)`).
+   - Every block must log its reverse mutation in `reorg_history` to support zero-corruption rollbacks on chain reorgs.
+6. Error Handling:
+   - Never use `.unwrap()` or `.expect()` in production consensus or block processing code.
+   - Return explicit typed errors: `Result<T, RejectReason>` or `PrevoutError`.
 
 # Testing Mandate
-- Every consensus change requires:
-  1. A unit test in `tusm-core/tests/`
-  2. A property test with `proptest` testing at least 500 cases
-  3. Verification that `cargo clippy -p tusm-core --lib` passes with zero warnings
+- Every consensus or indexer modification requires:
+  1. A deterministic unit test in `tusm-core/tests/` or `tusm-indexer/tests/`.
+  2. A property test with `proptest` verifying invariants across randomized inputs.
+  3. Verification that `cargo clippy --workspace --lib -- -D warnings` passes with zero warnings.
+  4. Validation that `cargo test -p tusm-core --test tdd_crc_template_matching` passes with 100% convergence.
