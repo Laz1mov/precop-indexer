@@ -237,6 +237,58 @@ impl StateDb {
         }
     }
 
+    pub fn set_balance(&self, ticker: &str, address: &str, balance: u128) {
+        let key = format!("bal:{}:{}", ticker, address);
+        let _ = self.db.insert(key.as_bytes(), &balance.to_le_bytes());
+    }
+
+    pub fn set_sigma(&self, ticker: &str, sigma: &SigmaLeaf) {
+        let key = format!("sigma:leaf:{}", ticker);
+        let data = sigma.to_canonical_bytes();
+        let _ = self.db.insert(key.as_bytes(), &data[..]);
+    }
+
+    pub fn record_mint_allocation(
+        &self,
+        txid: &str,
+        ticker: &str,
+        recipient: &str,
+        asset: &str,
+        allocated_atoms: u128,
+        lock: u16,
+        multiplier: u64,
+        height: u32,
+    ) {
+        let rec = serde_json::json!({
+            "txid": txid,
+            "ticker": ticker,
+            "recipient": recipient,
+            "asset": asset,
+            "allocated_atoms": allocated_atoms.to_string(),
+            "lock": lock,
+            "multiplier": multiplier,
+            "height": height
+        });
+        let key = format!("mint:record:{}", txid);
+        if let Ok(bytes) = serde_json::to_vec(&rec) {
+            let _ = self.db.insert(key.as_bytes(), bytes);
+        }
+    }
+
+    pub fn get_mint_allocation(&self, txid: &str) -> Option<(String, String, String, u128, u16, u64, u32)> {
+        let key = format!("mint:record:{}", txid);
+        let data = self.db.get(key.as_bytes()).ok()??;
+        let v: serde_json::Value = serde_json::from_slice(&data).ok()?;
+        let ticker = v.get("ticker")?.as_str()?.to_string();
+        let recipient = v.get("recipient")?.as_str()?.to_string();
+        let asset = v.get("asset")?.as_str()?.to_string();
+        let allocated_atoms = v.get("allocated_atoms")?.as_str()?.parse::<u128>().ok()?;
+        let lock = v.get("lock")?.as_u64()? as u16;
+        let multiplier = v.get("multiplier")?.as_u64()?;
+        let height = v.get("height")?.as_u64()? as u32;
+        Some((ticker, recipient, asset, allocated_atoms, lock, multiplier, height))
+    }
+
     pub fn get_total_balance(&self, ticker: &str) -> u128 {
         let prefix = format!("bal:{}:", ticker);
         let mut total = 0u128;

@@ -237,6 +237,36 @@ async fn test_scanner_empty_to_dynamic_external_payment_resolution() {
     }
     println!("✅ Pass 5 Passed: All 4 canonical historical DOG transactions are strictly bound to their exact amounts and rates");
 
+    // Pass 6: Determinism Gap Elimination - Asynchronous Reconciliation Test
+    // Simulates a slow sidecar: Block 968966 is initially processed with NO attestation (BTC fallback),
+    // and then the sidecar writes the attestation asynchronously. The engine reconciles retroactively!
+    {
+        let mut reset_crc3 = crc_state.clone();
+        reset_crc3.supply = 0;
+        scanner.db.commit_block_batch(968894, "0000000000000000000000000000000000000000000000000000000000000000", &[("CRC".to_string(), reset_crc3, None)], &[]);
+        std::fs::write(&ext_path, "{}").unwrap();
+
+        // 1. Process block with NO attestation (sidecar is lagging)
+        let ok_slow = scanner.process_block(&block, 968966, &provider).await;
+        assert!(ok_slow, "Block should process under BTC fallback");
+        let initial_sigma = scanner.db.get_sigma("CRC").unwrap();
+        assert_eq!(initial_sigma.supply, 7_986_906_841_309u128, "Initial allocation must be BTC fallback");
+
+        // 2. Sidecar now finishes indexing UniSat and writes valid signed attestation
+        std::env::set_var("SIDECAR_ATTESTATION_SECRET", test_secret);
+        std::fs::write(&ext_path, serde_json::to_string_pretty(&mock_verified_payments).unwrap()).unwrap();
+
+        // 3. Engine detects external payment update and triggers reconciliation
+        let active_ext = precop_tusm_indexer::scanner_engine::load_verified_external_payments(&ext_path);
+        let upgraded = scanner.reconcile_external_payments(968967, &active_ext);
+        assert_eq!(upgraded, 1, "Exactly 1 mint allocation should be retroactively upgraded");
+
+        // 4. Verify that CRC supply converged to the EXACT DOG allocation (54,429,647,130,000 atoms)
+        let reconciled_sigma = scanner.db.get_sigma("CRC").unwrap();
+        assert_eq!(reconciled_sigma.supply, 54_429_647_130_000u128, "Reconciled state must match exact DOG allocation!");
+        println!("✅ Pass 6 Passed: Determinism gap eliminated: Asynchronous sidecar attestation retroactively reconciled supply from 7,986,906,841,309 to exact 54,429,647,130,000 atoms!");
+    }
+
     // Clean up
     let _ = std::fs::remove_dir_all(test_db_path);
     let _ = std::fs::remove_dir_all(test_dir);

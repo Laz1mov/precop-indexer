@@ -379,6 +379,18 @@ impl LegacyV1Router {
                                                     }
                                                     seal_amount = tx.output[2].value;
                                                 }
+                                        } else if tick_upper == "CRC" && crate::crc_canonical::get_canonical_dog_mint(&tx.txid().to_string()).is_some() {
+                                            let (units, rate, lock) = crate::crc_canonical::get_canonical_dog_mint(&tx.txid().to_string()).unwrap();
+                                            payment_asset = "DOG";
+                                            payment_atoms = units;
+                                            external_rate = Some(rate as u128);
+                                            matched_lock = lock;
+                                            matched_multiplier = if lock == 6767 { 13_090_170 } else if lock == 2100 { 11_360_100 } else { 10_000_000 };
+                                            if !seal_found && tx.output.len() > 2 && tx.output[2].value >= 330 {
+                                                seal_found = true;
+                                                seal_index = Some(2);
+                                                seal_amount = tx.output[2].value;
+                                            }
                                         } else if tx.output.len() >= 2 {
                                             let bons_payload: [u8; 32] = [
                                                 0x77, 0xd8, 0xbb, 0x78, 0xcc, 0x47, 0xa7, 0x15, 

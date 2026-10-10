@@ -45,3 +45,7 @@ node_modules/
 # Mutation testing & coverage reports
 mutants.out/
 lcov.info
+
+# Local binaries and proof artifacts
+bin/
+coq/

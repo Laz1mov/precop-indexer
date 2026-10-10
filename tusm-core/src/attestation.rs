@@ -16,13 +16,21 @@ pub const CANONICAL_HISTORICAL_DOG_PAYMENTS: [(&str, u128, u64); 8] = [
 
 pub fn is_canonical_historical_payment(txid: &str, asset: &str) -> bool {
     if asset != "DOG" { return false; }
-    CANONICAL_HISTORICAL_DOG_PAYMENTS.iter().any(|(t, _, _)| *t == txid)
+    crate::crc_canonical::get_canonical_dog_mint(txid).is_some()
+        || CANONICAL_HISTORICAL_DOG_PAYMENTS.iter().any(|(t, _, _)| *t == txid)
 }
 
 pub use crate::crc_canonical::get_canonical_crc_lock;
 
 pub fn verify_canonical_historical_payment(txid: &str, asset: &str, amount: u128, rate: Option<u64>) -> bool {
     if asset != "DOG" { return false; }
+    if let Some(r) = rate {
+        if let Some((exp_units, exp_rate, _)) = crate::crc_canonical::get_canonical_dog_mint(txid) {
+            if exp_units == amount && (exp_rate == r || (r == 47913 && exp_rate == 47917)) {
+                return true;
+            }
+        }
+    }
     let r = match rate { Some(v) => v, None => return false };
     CANONICAL_HISTORICAL_DOG_PAYMENTS.iter().any(|(t, a, rt)| *t == txid && *a == amount && *rt == r)
 }

@@ -280,6 +280,7 @@ impl ScannerEngine {
         for (k, v) in load_verified_external_payments(&ext_payments_path) {
             active_external_payments.insert(k, v);
         }
+        self.reconcile_external_payments(height, &active_external_payments);
 
         // PREVOUT RESOLUTION (ATOMIC BATCH)
         // Resolve all required external context for the entire block BEFORE mutating any state.
@@ -304,7 +305,8 @@ impl ScannerEngine {
                 continue; // Skip non-candidate transactions to drastically speed up sync
             }
 
-            if !active_external_payments.contains_key(&tx.txid().to_string()) {
+            let is_known_canonical = tusm_core::crc_canonical::get_canonical_dog_mint(&tx.txid().to_string()).is_some();
+            if !is_known_canonical && !active_external_payments.contains_key(&tx.txid().to_string()) {
                 use std::io::Write;
                 let pending_path = std::env::var("TUSM_PENDING_MINTS_PATH").unwrap_or_else(|_| {
                     if std::path::Path::new("./data").exists() {
@@ -315,6 +317,26 @@ impl ScannerEngine {
                 });
                 if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&pending_path) {
                     let _ = writeln!(f, "{}", tx.txid());
+                }
+
+                // Ingestion synchronization barrier for live scanning:
+                // If a wait window is configured, allow the sidecar a brief window
+                // to write the attestation before evaluating the block.
+                let wait_ms: u64 = std::env::var("TUSM_SIDECAR_WAIT_MS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                if wait_ms > 0 {
+                    let start_wait = std::time::Instant::now();
+                    while start_wait.elapsed().as_millis() < wait_ms as u128 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                        for (k, v) in load_verified_external_payments(&ext_payments_path) {
+                            active_external_payments.insert(k, v);
+                        }
+                        if active_external_payments.contains_key(&tx.txid().to_string()) {
+                            break;
+                        }
+                    }
                 }
             }
             // BACKWARD COMPATIBILITY: Try V1 Router first
@@ -384,6 +406,26 @@ impl ScannerEngine {
                             let new_bal = old_bal.saturating_add(*amt);
                             balances_update.push((ticker.clone(), dest.clone(), new_bal, self.db.get_balance(&ticker, dest)));
                             local_balances.insert(format!("{}:{}", ticker, dest), new_bal);
+
+                            let p_asset = json.get("payment_asset").and_then(|v| v.as_str()).unwrap_or("BTC");
+                            let s_lock = json.get("seal_lock").and_then(|v| v.as_u64()).unwrap_or(1000) as u16;
+                            let s_mult = match s_lock {
+                                6767 => 13_090_170,
+                                2100 => 11_360_100,
+                                1000 => 10_000_000,
+                                144 => 8_090_170,
+                                _ => 10_000_000,
+                            };
+                            self.db.record_mint_allocation(
+                                &tx.txid().to_string(),
+                                &ticker,
+                                dest,
+                                p_asset,
+                                *amt,
+                                s_lock,
+                                s_mult,
+                                height,
+                            );
                         } else if op == "transfer" {
                             if let Some(sender) = json.get("sender").and_then(|s| s.as_str()) {
                                 let old_sender = {
@@ -668,10 +710,94 @@ impl ScannerEngine {
         self.db.commit_block_batch(height, &block.block_hash().to_string(), &sigmas_update, &balances_update);
         true
     }
+
+    /// Retroactively upgrade previously processed mints if an external attestation arrives later.
+    /// Eliminates the determinism gap between fast and slow sidecars.
+    pub fn reconcile_external_payments(
+        &self,
+        current_height: u32,
+        active_external_payments: &std::collections::HashMap<String, (String, u128)>,
+    ) -> usize {
+        let mut upgraded = 0;
+        for (txid, (asset_entry, amount)) in active_external_payments {
+            if let Some((ticker, recipient, asset, allocated_atoms, lock, mut mult, mint_height)) = self.db.get_mint_allocation(txid) {
+                if mint_height >= current_height {
+                    // Do not reconcile mints from current or future block; they are evaluated directly in block tx loop
+                    continue;
+                }
+                let parts: Vec<&str> = asset_entry.split(':').collect();
+                let ext_asset = parts[0];
+                if asset == "BTC" && ext_asset == "DOG" {
+                    let ext_rate: u64 = if parts.len() > 1 {
+                        parts[1].parse().unwrap_or(47913)
+                    } else {
+                        47913
+                    };
+                    let actual_lock = if parts.len() > 2 {
+                        parts[2].parse().unwrap_or(lock)
+                    } else {
+                        lock
+                    };
+                    mult = match actual_lock {
+                        6767 => 13_090_170,
+                        2100 => 11_360_100,
+                        1000 => 10_000_000,
+                        144 => 8_090_170,
+                        _ => mult,
+                    };
+                    
+                    let expected_atoms = ((*amount as u128)
+                        .saturating_mul(ext_rate as u128)
+                        .saturating_mul(mult as u128)) / 50_000_000;
+                    
+                    if expected_atoms > allocated_atoms {
+                        let delta = expected_atoms - allocated_atoms;
+                        let cur_bal = self.db.get_balance(&ticker, &recipient);
+                        
+                        if let Some(mut sigma) = self.db.get_sigma(&ticker) {
+                            let old_supply = sigma.supply;
+                            let new_supply = std::cmp::min(sigma.supply.saturating_add(delta), sigma.max_supply);
+                            let actual_delta = new_supply.saturating_sub(old_supply);
+                            sigma.supply = new_supply;
+                            
+                            self.db.set_balance(&ticker, &recipient, cur_bal.saturating_add(actual_delta));
+                            self.db.set_sigma(&ticker, &sigma);
+                            
+                            self.db.record_mint_allocation(
+                                txid,
+                                &ticker,
+                                &recipient,
+                                ext_asset,
+                                expected_atoms,
+                                actual_lock,
+                                mult,
+                                mint_height,
+                            );
+                            
+                            println!(
+                                "[Consensus Reconciler] Successfully upgraded mint txid {} from BTC fallback ({} atoms) to DOG attestation ({} atoms, delta +{} atoms)",
+                                txid, allocated_atoms, expected_atoms, actual_delta
+                            );
+                            upgraded += 1;
+                        }
+                    }
+                }
+            }
+        }
+        upgraded
+    }
 }
 
 pub fn load_verified_external_payments(path: &str) -> std::collections::HashMap<String, (String, u128)> {
     let mut verified = std::collections::HashMap::new();
+
+    // 1. Consensus Ground Truth: Seed all 39 canonical historical DOG mints
+    for (txid, units, rate, lock) in tusm_core::crc_canonical::CANONICAL_HISTORICAL_DOG_MINTS {
+        let asset_key = format!("DOG:{}:{}", rate, lock);
+        verified.insert(txid.to_string(), (asset_key, units));
+    }
+
+    // 2. Load dynamic external payments from disk with cryptographic attestation verification
     if let Ok(content) = std::fs::read_to_string(path) {
         if let Ok(parsed) = serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(&content) {
             for (txid, val) in parsed {
